@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
-	// "flag"
+	"os"
+	"flag"
 	"fmt"
 	"log"
-	// "path/filepath"
+
+	"path/filepath"
 
 	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/model"
 	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/storage"
+	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/k8s"
 	"github.com/gin-gonic/gin"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	corev1 "k8s.io/api/core/v1"
@@ -16,29 +19,24 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	// "k8s.io/client-go/tools/clientcmd"
-	// "k8s.io/client-go/util/homedir"
+	"k8s.io/client-go/util/homedir"
 )
 
 func main() {
-	// var kubeconfig *string
-	// if home := homedir.HomeDir(); home != "" {
-	// 	kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
-	// } else {
-	// 	kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
-	// }
-	// flag.Parse()
+	isOutSideClusterConfig := os.Getenv("OUTSIDE_CLUSTER")
+	var config *rest.Config
+	if isOutSideClusterConfig == "true" {
+		var kubeconfig *string
+		if home := homedir.HomeDir(); home != "" {
+			kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+		} else {
+			kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
+		}
+		flag.Parse()
 
-	// // use the current context in kubeconfig
-	// config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
-	// if err != nil {
-	// 	panic(err.Error())
-	// }
-
-	// creates the in-cluster config
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		panic(err.Error())
+		config = k8s.GetOusideClusterConfig(*kubeconfig)
+	} else {
+		config = k8s.GetInsideClusterConfig()
 	}
 
 	// create the clientset

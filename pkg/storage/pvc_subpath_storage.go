@@ -3,10 +3,13 @@ package storage
 import (
 	"database/sql"
 	"fmt"
+	"os"
 
 	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/model"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+const defaultDBPath = "/workspace/source/database/foo.db"
 
 type PVCSubPathsStorage struct {
 	db *sql.DB
@@ -17,7 +20,13 @@ func NewPVCSubPathsStorage() (*PVCSubPathsStorage) {
 }
 
 func (paths *PVCSubPathsStorage) Init() error {
-	db, err := sql.Open("sqlite3", "/workspace/source/database/foo.db")
+	dbPath := os.Getenv("DB_PATH")
+
+	if len(dbPath) == 0 {
+		dbPath = defaultDBPath
+	}
+
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return err
 	}
