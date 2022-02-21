@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pvc-cleaner
+  namespace: default
+  labels:
+    app: pvc-cleaner
+spec:
+  selector:
+    matchLabels:
+      app: pvc-cleaner
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: pvc-cleaner
+    spec:
+      # securityContext:
+      #   runAsNonRoot: true
+      containers:
+      - command:
+        - /pvc-cleaner
+        # - tail
+        # args:
+        # - -f
+        # - /dev/null
+        ports:
+        - containerPort: 8080
+        image: quay.io/aandriienko/pvc-cleaner
+        # image: fedora
+        imagePullPolicy: Always
+        name: pvc-cleaner
+        securityContext:
+          allowPrivilegeEscalation: false
+        volumeMounts:
+        - name: source
+          mountPath: /workspace/source/database
+          subPath: database
+        # livenessProbe:
+        #   httpGet:
+        #     path: /healthz
+        #     port: 8081
+        #   initialDelaySeconds: 15
+        #   periodSeconds: 20
+        # readinessProbe:
+        #   httpGet:
+        #     path: /readyz
+        #     port: 8081
+        #   initialDelaySeconds: 5
+        #   periodSeconds: 10
+        # resources:
+        #   limits:
+        #     cpu: 200m
+        #     memory: 100Mi
+        #   requests:
+        #     cpu: 100m
+        #     memory: 20Mi
+        # env:
+        # - name: GITHUB_ORG
+        #   valueFrom:
+        #     configMapKeyRef:
+        #       name: github-config
+        #       key: GITHUB_ORG
+        #       optional: true
+        # - name: GITHUB_AUTH_TOKEN
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: has-github-token
+        #       key: token
+        #       optional: true
+      volumes:
+        - name: source
+          persistentVolumeClaim:
+            claimName: app-studio-default-workspace
+      serviceAccountName: pvc-cleaner
+      terminationGracePeriodSeconds: 10
