@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/model"
 	_ "github.com/mattn/go-sqlite3"
@@ -13,6 +14,7 @@ const defaultDBPath = "/workspace/source/database/foo.db"
 
 type PVCSubPathsStorage struct {
 	db *sql.DB
+	mu sync.Mutex
 }
 
 func NewPVCSubPathsStorage() (*PVCSubPathsStorage) {
@@ -42,6 +44,9 @@ func (paths *PVCSubPathsStorage) Init() error {
 }
 
 func (paths *PVCSubPathsStorage) AddPVCSubPath(path *model.PVCSubPath) error {
+	defer paths.mu.Unlock()
+	paths.mu.Lock()
+
 	stmt, err := paths.db.Prepare("INSERT INTO pvcsubpath(pipelinerun, pvcsubpath) values(?,?)")
 	if err != nil {
 		return err
@@ -63,6 +68,9 @@ func (paths *PVCSubPathsStorage) AddPVCSubPath(path *model.PVCSubPath) error {
 }
 
 func (paths *PVCSubPathsStorage) Delete(pipelinerun string) error {
+	defer paths.mu.Unlock()
+	paths.mu.Lock()
+
 	stmt, err := paths.db.Prepare("delete from userinfo where pipelinerun=?")
 	if err != nil {
 		return err
@@ -83,6 +91,9 @@ func (paths *PVCSubPathsStorage) Delete(pipelinerun string) error {
 }
 
 func (paths *PVCSubPathsStorage) GetAll() ([]*model.PVCSubPath, error) {
+	defer paths.mu.Unlock()
+	paths.mu.Lock()
+
 	rows, err := paths.db.Query("SELECT * FROM pvcsubpath")
 	if err != nil {
 		return []*model.PVCSubPath{}, err
