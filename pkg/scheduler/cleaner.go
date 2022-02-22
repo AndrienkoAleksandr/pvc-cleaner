@@ -106,12 +106,22 @@ func (cleaner *PVCSubPathCleaner) DeleteNotUsedSubPaths() error {
 		case <- cleanUpDone:
 			ticker.Stop()
 			watch.Stop()
+			defer cleaner.deletePVCFromStorage(pvcToCleanUp)
 			return cleaner.clientset.CoreV1().Pods("default").Delete(context.TODO(), pvcSubPathCleanerPod.Name, metav1.DeleteOptions{})
 		case <- ticker.C:
 			ticker.Stop()
 			watch.Stop()
 			fmt.Println("Remove pod cleaner due timeout")
+			defer cleaner.deletePVCFromStorage(pvcToCleanUp)
 			return cleaner.clientset.CoreV1().Pods("default").Delete(context.TODO(), pvcSubPathCleanerPod.Name, metav1.DeleteOptions{})
+		}
+	}
+}
+
+func (cleaner *PVCSubPathCleaner) deletePVCFromStorage(pvcSubPaths []*model.PVCSubPath) {
+	for _, pvcSubPath := range pvcSubPaths {
+		if err := cleaner.subPathStorage.Delete(pvcSubPath.PipelineRun); err != nil {
+			fmt.Println(err.Error())
 		}
 	}
 }
