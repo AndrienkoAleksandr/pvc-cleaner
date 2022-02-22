@@ -15,7 +15,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-const DEF_PERIOD = 3 * time.Minute
+const (
+	DEF_PERIOD = 3 * time.Minute
+	CLEANUP_TIMEOUT = 120
+)
 
 type PVCSubPathCleaner struct {
 	pipelineRunApi v1beta1.PipelineRunInterface
@@ -70,9 +73,47 @@ func (cleaner *PVCSubPathCleaner) DeleteNotUsedSubPaths() error {
 		return err
 	}
 
-	// todo delete pvc cleaner pod....
+	watch, err := cleaner.clientset.CoreV1().Pods("default").Watch(context.TODO(), metav1.ListOptions{
+		LabelSelector: "component=cleaner-pod",
+	})
+	if err != nil {
+		return err
+	}
 
-	return nil
+	cleanUpDone := make(chan bool)
+	go func(cleanUpDone chan bool) {
+		for event := range watch.ResultChan() {
+			fmt.Printf("Type: %v\n", event.Type)
+			p, ok := event.Object.(*corev1.Pod)
+			if !ok {
+				continue
+			}
+			fmt.Println(p.Status.ContainerStatuses)
+			fmt.Println(p.Status.Phase)
+			if p.Status.Phase == corev1.PodSucceeded {
+				cleanUpDone <- true
+			}
+			if p.Status.Phase == corev1.PodFailed {
+				log.Println("Pod cleaner failed" + p.Status.Reason + " " + p.Status.Message)
+				cleanUpDone <- true
+			}
+		}
+	}(cleanUpDone)
+
+	ticker := time.NewTicker(CLEANUP_TIMEOUT * time.Second)
+	for {
+		select {
+		case <- cleanUpDone:
+			ticker.Stop()
+			watch.Stop()
+			return cleaner.clientset.CoreV1().Pods("default").Delete(context.TODO(), pvcSubPathCleanerPod.Name, metav1.DeleteOptions{})
+		case <- ticker.C:
+			ticker.Stop()
+			watch.Stop()
+			fmt.Println("Remove pod cleaner due timeout")
+			return cleaner.clientset.CoreV1().Pods("default").Delete(context.TODO(), pvcSubPathCleanerPod.Name, metav1.DeleteOptions{})
+		}
+	}
 }
 
 func (cleaner *PVCSubPathCleaner) getPVCSubPathToCleanUp() ([]*model.PVCSubPath, error) {
@@ -93,10 +134,13 @@ func (cleaner *PVCSubPathCleaner) getPVCSubPathToCleanUp() ([]*model.PVCSubPath,
 
 func (cleaner *PVCSubPathCleaner) getPodCleaner(delFoldersContentCmd string, volumeMounts []corev1.VolumeMount) *corev1.Pod {
 	deadline := int64(5400)
+	labels := make(map[string]string)
+	labels["component"] = "cleaner-pod"
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "clean-pvc-pod",
 			Namespace: "default", // todo
+			Labels: labels,
 		},
 		Spec: corev1.PodSpec{
 			RestartPolicy:         "Never",

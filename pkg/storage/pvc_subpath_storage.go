@@ -44,8 +44,8 @@ func (paths *PVCSubPathsStorage) Init() error {
 }
 
 func (paths *PVCSubPathsStorage) AddPVCSubPath(path *model.PVCSubPath) error {
-	defer paths.mu.Unlock()
 	paths.mu.Lock()
+	defer paths.mu.Unlock()
 
 	stmt, err := paths.db.Prepare("INSERT INTO pvcsubpath(pipelinerun, pvcsubpath) values(?,?)")
 	if err != nil {
@@ -68,8 +68,8 @@ func (paths *PVCSubPathsStorage) AddPVCSubPath(path *model.PVCSubPath) error {
 }
 
 func (paths *PVCSubPathsStorage) Delete(pipelinerun string) error {
-	defer paths.mu.Unlock()
 	paths.mu.Lock()
+	defer paths.mu.Unlock()
 
 	stmt, err := paths.db.Prepare("delete from userinfo where pipelinerun=?")
 	if err != nil {
@@ -91,8 +91,8 @@ func (paths *PVCSubPathsStorage) Delete(pipelinerun string) error {
 }
 
 func (paths *PVCSubPathsStorage) GetAll() ([]*model.PVCSubPath, error) {
-	defer paths.mu.Unlock()
 	paths.mu.Lock()
+	defer paths.mu.Unlock()
 
 	rows, err := paths.db.Query("SELECT * FROM pvcsubpath")
 	if err != nil {
