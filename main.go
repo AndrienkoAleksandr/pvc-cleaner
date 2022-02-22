@@ -1,13 +1,15 @@
 package main
 
 import (
-	"os"
 	"flag"
 	"log"
+	"os"
 	"path/filepath"
-	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/storage"
+
 	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/k8s"
 	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/restapi"
+	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/scheduler"
+	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/storage"
 	"github.com/gin-gonic/gin"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	"k8s.io/client-go/kubernetes"
@@ -38,6 +40,7 @@ func main() {
 		panic(err.Error())
 	}
 
+	// create Tekton clientset
 	tknClientset, err := versioned.NewForConfig(config)
 	if err != nil {
 		log.Fatalf("failed to create pipeline clientset %s", err)
@@ -50,21 +53,25 @@ func main() {
 		log.Fatalf("Failed to init database storage %s", err.Error())
 	}
 
+	cleaner := scheduler.NewPVCSubPathCleaner(pipelinesRunApi, subPathStorage, clientset)
+	// cleanup pvc periodically
+	go cleaner.Schedule()
+
 	r := gin.Default()
 
 	r.POST("/pipeline-run", restapi.StorePVCSubPath(pipelinesRunApi, subPathStorage))
 
 	r.GET("/pipeline-run/list", restapi.GetAllPipelineWithPVCSubPath(subPathStorage))
 
-	r.DELETE("/pipeline-run/list", restapi.DeleteNotUsedSubPaths(pipelinesRunApi, subPathStorage, clientset))
+	r.DELETE("/pipeline-run/list", restapi.DeleteNotUsedSubPaths(cleaner))
 
-	r.GET("/health", func(c *gin.Context) {
+	r.GET("/ready", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"message": "Application is ready",
 		})
 	})
 
-	// listen and serve on 0.0.0.0:8080 (for windows "localhost:8080")
+	// listen and serve on 0.0.0.0:8080
 	if err := r.Run(); err != nil {
 		log.Fatal(err.Error())
 	}
