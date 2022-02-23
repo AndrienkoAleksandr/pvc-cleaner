@@ -83,7 +83,7 @@ func (cleaner *PVCSubPathCleaner) DeleteNotUsedSubPaths() error {
 	cleanUpDone := make(chan bool)
 	go func(cleanUpDone chan bool) {
 		for event := range watch.ResultChan() {
-			fmt.Printf("Type: %v\n", event.Type)
+			// fmt.Printf("Type: %v\n", event.Type)
 			p, ok := event.Object.(*corev1.Pod)
 			if !ok {
 				continue
