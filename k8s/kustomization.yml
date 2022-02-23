@@ -7,3 +7,4 @@ resources:
   - cluster-rolebinding.yaml
   - deployment.yaml
   - service.yaml
+  - pvc.yaml

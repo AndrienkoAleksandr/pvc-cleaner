@@ -71,7 +71,7 @@ func (paths *PVCSubPathsStorage) Delete(pipelinerun string) error {
 	paths.mu.Lock()
 	defer paths.mu.Unlock()
 
-	stmt, err := paths.db.Prepare("delete from userinfo where pipelinerun=?")
+	stmt, err := paths.db.Prepare("delete from pvcsubpath where pipelinerun=?")
 	if err != nil {
 		return err
 	}
