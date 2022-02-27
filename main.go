@@ -45,8 +45,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create pipeline clientset %s", err)
 	}
-	// todo set up current namespace....
-	pipelinesRunApi := tknClientset.TektonV1beta1().PipelineRuns("default")
+	
+	namespace, err := k8s.GetNamespace()
+	if err != nil {
+		log.Fatalf("failed to create pipeline clientset %s", err)
+	}
+
+	pipelinesRunApi := tknClientset.TektonV1beta1().PipelineRuns(namespace)
 
 	subPathStorage := storage.NewPVCSubPathsStorage()
 	if err := subPathStorage.Init(); err != nil {
