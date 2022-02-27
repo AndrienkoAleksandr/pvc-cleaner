@@ -6,13 +6,14 @@ import (
 	"log"
 	"time"
 
+	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/k8s"
 	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/model"
 	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/storage"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned/typed/pipeline/v1beta1"
-	"k8s.io/client-go/kubernetes"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 const (
@@ -67,13 +68,18 @@ func (cleaner *PVCSubPathCleaner) DeleteNotUsedSubPaths() error {
 	}
 
 	pvcSubPathCleanerPod := cleaner.getPodCleaner(delFoldersContentCmd, volumeMounts)
-	// todo set up namespace
-	_, err = cleaner.clientset.CoreV1().Pods("default").Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
+
+	namespace, err := k8s.GetNamespace()
 	if err != nil {
 		return err
 	}
 
-	watch, err := cleaner.clientset.CoreV1().Pods("default").Watch(context.TODO(), metav1.ListOptions{
+	_, err = cleaner.clientset.CoreV1().Pods(namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
+	if err != nil {
+		return err
+	}
+
+	watch, err := cleaner.clientset.CoreV1().Pods(namespace).Watch(context.TODO(), metav1.ListOptions{
 		LabelSelector: "component=cleaner-pod",
 	})
 	if err != nil {
@@ -107,13 +113,13 @@ func (cleaner *PVCSubPathCleaner) DeleteNotUsedSubPaths() error {
 			ticker.Stop()
 			watch.Stop()
 			defer cleaner.deletePVCFromStorage(pvcToCleanUp)
-			return cleaner.clientset.CoreV1().Pods("default").Delete(context.TODO(), pvcSubPathCleanerPod.Name, metav1.DeleteOptions{})
+			return cleaner.clientset.CoreV1().Pods(namespace).Delete(context.TODO(), pvcSubPathCleanerPod.Name, metav1.DeleteOptions{})
 		case <- ticker.C:
 			ticker.Stop()
 			watch.Stop()
 			fmt.Println("Remove pod cleaner due timeout")
 			defer cleaner.deletePVCFromStorage(pvcToCleanUp)
-			return cleaner.clientset.CoreV1().Pods("default").Delete(context.TODO(), pvcSubPathCleanerPod.Name, metav1.DeleteOptions{})
+			return cleaner.clientset.CoreV1().Pods(namespace).Delete(context.TODO(), pvcSubPathCleanerPod.Name, metav1.DeleteOptions{})
 		}
 	}
 }
@@ -149,7 +155,6 @@ func (cleaner *PVCSubPathCleaner) getPodCleaner(delFoldersContentCmd string, vol
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "clean-pvc-pod",
-			Namespace: "default", // todo
 			Labels: labels,
 		},
 		Spec: corev1.PodSpec{

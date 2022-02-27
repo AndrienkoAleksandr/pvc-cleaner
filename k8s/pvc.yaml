@@ -4,7 +4,6 @@ metadata:
   finalizers:
     - kubernetes.io/pvc-protection
   name: app-studio-default-workspace
-  namespace: default
 spec:
   accessModes:
     - ReadWriteOnce
