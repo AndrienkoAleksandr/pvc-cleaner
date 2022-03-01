@@ -3,7 +3,7 @@ kind: PersistentVolumeClaim
 metadata:
   finalizers:
     - kubernetes.io/pvc-protection
-  name: app-studio-default-workspace
+  name: app-studio-pvc-cleaner-workspace
 spec:
   accessModes:
     - ReadWriteOnce

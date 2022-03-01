@@ -61,6 +61,7 @@ func main() {
 	cleaner := scheduler.NewPVCSubPathCleaner(pipelinesRunApi, subPathStorage, clientset)
 	// cleanup pvc periodically
 	go cleaner.Schedule()
+	go cleaner.WatchAndCleanUpEmptyFolders()
 
 	r := gin.Default()
 
