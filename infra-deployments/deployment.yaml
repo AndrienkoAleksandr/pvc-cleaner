@@ -70,6 +70,6 @@ spec:
       volumes:
         - name: source
           persistentVolumeClaim:
-            claimName: app-studio-default-workspace
+            claimName: app-studio-pvc-cleaner-workspace
       serviceAccountName: pvc-cleaner
       terminationGracePeriodSeconds: 10
