@@ -16,6 +16,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/cache"
+	watchTool "k8s.io/client-go/tools/watch"
 )
 
 const (
@@ -49,12 +51,25 @@ func (cleaner *PVCSubPathCleaner) Schedule() {
 
 
 func (cleaner *PVCSubPathCleaner) WatchAndCleanUpEmptyFolders() {
-	watch, err := cleaner.pipelineRunApi.Watch(context.TODO(), metav1.ListOptions{})
+	// Watcher will be closed after some timeout, so we need to re-create watcher https://github.com/kubernetes/client-go/issues/623.
+	// Let's use "NewRetryWatcher" helper for this purpose.
+	retryWatcher, err := watchTool.NewRetryWatcher("1", &cache.ListWatch{
+		WatchFunc: func() func(options metav1.ListOptions) (watchapi.Interface, error) {
+			return func(options metav1.ListOptions) (watchapi.Interface, error) {
+				return cleaner.pipelineRunApi.Watch(context.TODO(), metav1.ListOptions{})
+			}
+		}(),
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	for event := range watch.ResultChan() {
+	for {
+		event, ok := <- retryWatcher.ResultChan()
+		if !ok {
+			return
+		}
+
 		if event.Type != watchapi.Deleted {
 			continue
 		}
