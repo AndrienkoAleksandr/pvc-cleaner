@@ -1,3 +1,18 @@
+//
+// Copyright 2022 Red Hat, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package main
 
 import (
@@ -45,7 +60,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create pipeline clientset %s", err)
 	}
-	
+
 	namespace, err := k8s.GetNamespace()
 	if err != nil {
 		log.Fatalf("failed to create pipeline clientset %s", err)
@@ -58,18 +73,18 @@ func main() {
 		log.Fatalf("Failed to init database storage %s", err.Error())
 	}
 
-	cleaner := scheduler.NewPVCSubPathCleaner(pipelinesRunApi, subPathStorage, clientset)
+	cleanerConf := k8s.NewCleanerConfig(clientset, namespace)
+	cleanerConf.CreateIfNotPresent()
+
+	cleaner := scheduler.NewPVCSubPathCleaner(pipelinesRunApi, subPathStorage, clientset, cleanerConf, namespace)
 	// cleanup pvc periodically
-	go cleaner.Schedule()
-	go cleaner.WatchAndCleanUpEmptyFolders()
+	go cleaner.WatchNewPipelineRuns(subPathStorage)
+	go cleaner.ScheduleCleanUpSubPathFoldersContent()
+	go cleaner.WatchAndCleanUpSubPathFolders()
 
 	r := gin.Default()
 
-	r.POST("/pipeline-run", restapi.StorePVCSubPath(pipelinesRunApi, subPathStorage))
-
 	r.GET("/pipeline-run/list", restapi.GetAllPipelineWithPVCSubPath(subPathStorage))
-
-	r.DELETE("/pipeline-run/list", restapi.DeleteNotUsedSubPaths(cleaner))
 
 	r.GET("/ready", func(c *gin.Context) {
 		c.JSON(200, gin.H{

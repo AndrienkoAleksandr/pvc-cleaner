@@ -1,8 +1,22 @@
+//
+// Copyright 2022 Red Hat, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package storage
 
 import (
 	"database/sql"
-	"fmt"
 	"os"
 	"sync"
 
@@ -10,14 +24,22 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const defaultDBPath = "/workspace/source/database/foo.db"
+const (
+	defaultDBPath = "/workspace/source/database/foo.db"
+
+	initialDB = `CREATE TABLE IF NOT EXISTS 'pvcsubpath' (
+	'uid' INTEGER PRIMARY KEY AUTOINCREMENT, 
+	'pipelinerun' VARCHAR(64) NULL, 
+	'pvcsubpath' VARCHAR(64) NULL
+	);`
+)
 
 type PVCSubPathsStorage struct {
 	db *sql.DB
 	mu sync.Mutex
 }
 
-func NewPVCSubPathsStorage() (*PVCSubPathsStorage) {
+func NewPVCSubPathsStorage() *PVCSubPathsStorage {
 	return &PVCSubPathsStorage{}
 }
 
@@ -33,11 +55,10 @@ func (paths *PVCSubPathsStorage) Init() error {
 		return err
 	}
 
-	result, err := db.Exec("CREATE TABLE IF NOT EXISTS 'pvcsubpath' ('uid' INTEGER PRIMARY KEY AUTOINCREMENT, 'pipelinerun' VARCHAR(64) NULL, 'pvcsubpath' VARCHAR(64) NULL);")
+	_, err = db.Exec(initialDB)
 	if err != nil {
 		return err
 	}
-	fmt.Println(result)
 
 	paths.db = db
 	return nil
@@ -57,12 +78,10 @@ func (paths *PVCSubPathsStorage) AddPVCSubPath(path *model.PVCSubPath) error {
 		return err
 	}
 
-	id, err := res.LastInsertId()
+	_, err = res.LastInsertId()
 	if err != nil {
 		return err
 	}
-
-	fmt.Println(id)
 
 	return nil
 }
@@ -81,11 +100,10 @@ func (paths *PVCSubPathsStorage) Delete(pipelinerun string) error {
 		return err
 	}
 
-	affect, err := res.RowsAffected()
+	_, err = res.RowsAffected()
 	if err != nil {
 		return err
 	}
-	fmt.Println(affect)
 
 	return nil
 }
@@ -100,7 +118,7 @@ func (paths *PVCSubPathsStorage) GetAll() ([]*model.PVCSubPath, error) {
 	}
 
 	defer rows.Close() // good habit to close
-	
+
 	var uid int
 	var pipelinerun string
 	var pvcsubpath string
@@ -110,10 +128,6 @@ func (paths *PVCSubPathsStorage) GetAll() ([]*model.PVCSubPath, error) {
 		if err = rows.Scan(&uid, &pipelinerun, &pvcsubpath); err != nil {
 			return []*model.PVCSubPath{}, err
 		}
-
-		fmt.Println(uid)
-		fmt.Println(pipelinerun)
-		fmt.Println(pvcsubpath)
 
 		pvcsubpath := &model.PVCSubPath{PipelineRun: pipelinerun, PVCSubPath: pvcsubpath}
 		subPaths = append(subPaths, pvcsubpath)

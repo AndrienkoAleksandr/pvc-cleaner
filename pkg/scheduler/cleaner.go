@@ -1,3 +1,19 @@
+//
+// Copyright 2022 Red Hat, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// todo rename package
 package scheduler
 
 import (
@@ -21,36 +37,98 @@ import (
 )
 
 const (
-	DEF_PERIOD = 3 * time.Minute
+	DEF_PERIOD      = 3 * time.Minute
 	CLEANUP_TIMEOUT = 600
 )
 
 type PVCSubPathCleaner struct {
 	pipelineRunApi v1beta1.PipelineRunInterface
 	subPathStorage *storage.PVCSubPathsStorage
-	clientset *kubernetes.Clientset
+	clientset      *kubernetes.Clientset
+	conf           *k8s.PVCCleanerConfig
+	namespace      string
 }
 
-func NewPVCSubPathCleaner(pipelineRunApi v1beta1.PipelineRunInterface, subPathStorage *storage.PVCSubPathsStorage, clientset *kubernetes.Clientset) *PVCSubPathCleaner {
+func NewPVCSubPathCleaner(pipelineRunApi v1beta1.PipelineRunInterface, subPathStorage *storage.PVCSubPathsStorage, clientset *kubernetes.Clientset, conf *k8s.PVCCleanerConfig, namespace string) *PVCSubPathCleaner {
 	return &PVCSubPathCleaner{
-		pipelineRunApi: pipelineRunApi, 
+		pipelineRunApi: pipelineRunApi,
 		subPathStorage: subPathStorage,
-		clientset: clientset,
+		clientset:      clientset,
+		conf:           conf,
+		namespace:      namespace,
 	}
 }
 
-func (cleaner *PVCSubPathCleaner) Schedule() {
-	for ;; {
+func (cleaner *PVCSubPathCleaner) ScheduleCleanUpSubPathFoldersContent() {
+	for {
 		time.Sleep(DEF_PERIOD)
 
-		if err := cleaner.DeleteNotUsedSubPaths(); err != nil {
+		log.Println("Schedule cleanup new subpath folders content")
+		if err := cleaner.deleteNotUsedSubPathsFoldersContent(); err != nil {
 			log.Print(err)
 		}
 	}
 }
 
+func (cleaner *PVCSubPathCleaner) WatchNewPipelineRuns(storage *storage.PVCSubPathsStorage) {
+	resourceVersion, err := cleaner.conf.GetWatchResourceVersion()
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("=========== Resource version for watch add operation is %s", resourceVersion)
 
-func (cleaner *PVCSubPathCleaner) WatchAndCleanUpEmptyFolders() {
+	// Watcher will be closed after some timeout, so we need to re-create watcher https://github.com/kubernetes/client-go/issues/623.
+	// Let's use "NewRetryWatcher" helper for this purpose.
+	retryWatcher, err := watchTool.NewRetryWatcher(resourceVersion, &cache.ListWatch{
+		WatchFunc: func() func(options metav1.ListOptions) (watchapi.Interface, error) {
+			return func(options metav1.ListOptions) (watchapi.Interface, error) {
+				return cleaner.pipelineRunApi.Watch(context.TODO(), metav1.ListOptions{})
+			}
+		}(),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for {
+		event, ok := <-retryWatcher.ResultChan()
+		if !ok {
+			return
+		}
+
+		if event.Type != watchapi.Added {
+			continue
+		}
+		pipelineRun, ok := event.Object.(*pipelinev1.PipelineRun)
+		if !ok {
+			continue
+		}
+		if err = cleaner.conf.UpdateWatchResourceVersion(pipelineRun.ObjectMeta.ResourceVersion); err != nil {
+			log.Println(err)
+			continue
+		}
+
+		log.Printf("Add new pipelineRun with name %s", pipelineRun.ObjectMeta.Name)
+
+		var subPath string
+		for _, workspace := range pipelineRun.Spec.Workspaces {
+			if workspace.Name == "workspace" {
+				subPath = workspace.SubPath
+				break
+			}
+		}
+
+		if subPath != "" {
+			pvcSubPath := &model.PVCSubPath{PipelineRun: pipelineRun.ObjectMeta.Name, PVCSubPath: subPath}
+			if err := storage.AddPVCSubPath(pvcSubPath); err != nil {
+				log.Println(err)
+				continue
+			}
+		}
+	}
+}
+
+func (cleaner *PVCSubPathCleaner) WatchAndCleanUpSubPathFolders() {
 	// Watcher will be closed after some timeout, so we need to re-create watcher https://github.com/kubernetes/client-go/issues/623.
 	// Let's use "NewRetryWatcher" helper for this purpose.
 	retryWatcher, err := watchTool.NewRetryWatcher("1", &cache.ListWatch{
@@ -65,7 +143,7 @@ func (cleaner *PVCSubPathCleaner) WatchAndCleanUpEmptyFolders() {
 	}
 
 	for {
-		event, ok := <- retryWatcher.ResultChan()
+		event, ok := <-retryWatcher.ResultChan()
 		if !ok {
 			return
 		}
@@ -73,17 +151,12 @@ func (cleaner *PVCSubPathCleaner) WatchAndCleanUpEmptyFolders() {
 		if event.Type != watchapi.Deleted {
 			continue
 		}
-		p, ok := event.Object.(*pipelinev1.PipelineRun)
+		pipelineRun, ok := event.Object.(*pipelinev1.PipelineRun)
 		if !ok {
 			continue
 		}
 
-		log.Println(fmt.Sprintf("===========Event type: %v, pipelinerun: %s,amount workspaces: %d", event.Type, p.ObjectMeta.Name, len(p.Spec.Workspaces)))
-		namespace, err := k8s.GetNamespace()
-		if err != nil {
-			log.Println(err)
-			continue
-		}
+		log.Println(fmt.Sprintf("=========== Event type: %v, pipelinerun: %s,amount workspaces: %d", event.Type, pipelineRun.ObjectMeta.Name, len(pipelineRun.Spec.Workspaces)))
 
 		pipelineRuns, err := cleaner.pipelineRunApi.List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
@@ -118,24 +191,24 @@ func (cleaner *PVCSubPathCleaner) WatchAndCleanUpEmptyFolders() {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      "source",
 			MountPath: "/workspace/source",
-			SubPath: ".",
+			SubPath:   ".",
 		})
 		for _, pvc := range pvcToCleanUp {
 			delFoldersContentCmd += "rm -rf /workspace/source/" + pvc.PVCSubPath + ";"
 		}
 
-		log.Println("============New pod cleaner")
+		log.Println("============ Create new pvc sub-path folder cleaner")
 
 		podName := "clean-empty-pvc-folders-pod" + fmt.Sprintf("%d", time.Now().UnixNano())
 		pvcSubPathCleanerPod := cleaner.getPodCleaner(podName, podName, delFoldersContentCmd, volumeMounts)
-		_, err = cleaner.clientset.CoreV1().Pods(namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
+		_, err = cleaner.clientset.CoreV1().Pods(cleaner.namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
 		if err != nil {
 			log.Print(err)
 			continue
 		}
 
-		log.Print("========= Remove empty folders cleaner pod")
-		err = cleaner.waitAndDeleteCleanUpPod(namespace, podName, "component=" + podName, cleaner.deletePVCFromStorage, pvcToCleanUp)
+		log.Print("========= Remove pvc sub-path folder cleaner pod")
+		err = cleaner.waitAndDeleteCleanUpPod(podName, "component="+podName, cleaner.deletePVCFromStorage, pvcToCleanUp)
 		if err != nil {
 			log.Print(err)
 			continue
@@ -143,7 +216,7 @@ func (cleaner *PVCSubPathCleaner) WatchAndCleanUpEmptyFolders() {
 	}
 }
 
-func (cleaner *PVCSubPathCleaner) DeleteNotUsedSubPaths() error {
+func (cleaner *PVCSubPathCleaner) deleteNotUsedSubPathsFoldersContent() error {
 	pvcToCleanUp, err := cleaner.getPVCSubPathToCleanUp()
 	if err != nil {
 		return err
@@ -161,27 +234,26 @@ func (cleaner *PVCSubPathCleaner) DeleteNotUsedSubPaths() error {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      "source",
 			MountPath: "/workspace/source/" + pvc.PVCSubPath,
-			SubPath: pvc.PVCSubPath,
+			SubPath:   pvc.PVCSubPath,
 		})
 	}
 
+	log.Println("--------- Create new pvc sub-path folder content cleaner pod")
+
 	pvcSubPathCleanerPod := cleaner.getPodCleaner("clean-pvc-pod", "cleaner-pod", delFoldersContentCmd, volumeMounts)
 
-	namespace, err := k8s.GetNamespace()
+	_, err = cleaner.clientset.CoreV1().Pods(cleaner.namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
 	if err != nil {
 		return err
 	}
 
-	_, err = cleaner.clientset.CoreV1().Pods(namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
-	if err != nil {
-		return err
-	}
+	log.Println("--------- Remove pvc sub-path folder content cleaner pod")
 
-	return cleaner.waitAndDeleteCleanUpPod(namespace, pvcSubPathCleanerPod.Name, "component=cleaner-pod", func(pvcSubpaths []*model.PVCSubPath) {}, pvcToCleanUp)
+	return cleaner.waitAndDeleteCleanUpPod(pvcSubPathCleanerPod.Name, "component=cleaner-pod", func(pvcSubpaths []*model.PVCSubPath) {}, pvcToCleanUp)
 }
 
-func (cleaner *PVCSubPathCleaner) waitAndDeleteCleanUpPod(namespace string, podName string, label string, onDelete func([]*model.PVCSubPath), subPaths []*model.PVCSubPath) error {
-	watch, err := cleaner.clientset.CoreV1().Pods(namespace).Watch(context.TODO(), metav1.ListOptions{
+func (cleaner *PVCSubPathCleaner) waitAndDeleteCleanUpPod(podName string, label string, onDelete func([]*model.PVCSubPath), subPaths []*model.PVCSubPath) error {
+	watch, err := cleaner.clientset.CoreV1().Pods(cleaner.namespace).Watch(context.TODO(), metav1.ListOptions{
 		LabelSelector: label,
 	})
 	if err != nil {
@@ -209,17 +281,17 @@ func (cleaner *PVCSubPathCleaner) waitAndDeleteCleanUpPod(namespace string, podN
 	ticker := time.NewTicker(CLEANUP_TIMEOUT * time.Second)
 	for {
 		select {
-		case <- cleanUpDone:
+		case <-cleanUpDone:
 			ticker.Stop()
 			watch.Stop()
 			defer onDelete(subPaths)
-			return cleaner.clientset.CoreV1().Pods(namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
-		case <- ticker.C:
+			return cleaner.clientset.CoreV1().Pods(cleaner.namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
+		case <-ticker.C:
 			ticker.Stop()
 			watch.Stop()
 			fmt.Println("Remove pod cleaner due timeout")
 			defer onDelete(subPaths)
-			return cleaner.clientset.CoreV1().Pods(namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
+			return cleaner.clientset.CoreV1().Pods(cleaner.namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
 		}
 	}
 }
@@ -284,9 +356,9 @@ func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFo
 						"-c",
 						delFoldersContentCmd,
 					},
-					Image: "registry.access.redhat.com/ubi8/ubi",
+					Image:        "registry.access.redhat.com/ubi8/ubi",
 					VolumeMounts: volumeMounts,
-					WorkingDir: "/",
+					WorkingDir:   "/",
 				},
 			},
 			Volumes: []corev1.Volume{
