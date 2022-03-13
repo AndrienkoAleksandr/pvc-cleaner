@@ -14,7 +14,7 @@
 // limitations under the License.
 
 // todo rename package
-package scheduler
+package cleaner
 
 import (
 	"context"

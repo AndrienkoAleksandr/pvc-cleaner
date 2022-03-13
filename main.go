@@ -23,7 +23,7 @@ import (
 
 	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/k8s"
 	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/restapi"
-	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/scheduler"
+	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/cleaner"
 	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/storage"
 	"github.com/gin-gonic/gin"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
@@ -76,11 +76,11 @@ func main() {
 	cleanerConf := k8s.NewCleanerConfig(clientset, namespace)
 	cleanerConf.CreateIfNotPresent()
 
-	cleaner := scheduler.NewPVCSubPathCleaner(pipelinesRunApi, subPathStorage, clientset, cleanerConf, namespace)
+	pvc_cleaner := cleaner.NewPVCSubPathCleaner(pipelinesRunApi, subPathStorage, clientset, cleanerConf, namespace)
 	// cleanup pvc periodically
-	go cleaner.WatchNewPipelineRuns(subPathStorage)
-	go cleaner.ScheduleCleanUpSubPathFoldersContent()
-	go cleaner.WatchAndCleanUpSubPathFolders()
+	go pvc_cleaner.WatchNewPipelineRuns(subPathStorage)
+	go pvc_cleaner.ScheduleCleanUpSubPathFoldersContent()
+	go pvc_cleaner.WatchAndCleanUpSubPathFolders()
 
 	r := gin.Default()
 
