@@ -22,6 +22,26 @@
             "group": "build"
         },
         {
+            "label": "Build pod cleaner image",
+            "command": "docker build -t quay.io/${QUAY_USERNAME}/pvc-pod-cleaner -f cleaner_pod.Dockerfile .",
+            "type": "shell",
+            "args": [],
+            "presentation": {
+                "reveal": "always"
+            },
+            "group": "build"
+        },
+        {
+            "label": "Push pod cleaner image",
+            "command": "docker push quay.io/${QUAY_USERNAME}/pvc-pod-cleaner",
+            "type": "shell",
+            "args": [],
+            "presentation": {
+                "reveal": "always"
+            },
+            "group": "build"
+        },
+        {
             "label": "Compile code to Linux binary",
             "command": "go mod download && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o pvc-cleaner main.go",
             "type": "shell",

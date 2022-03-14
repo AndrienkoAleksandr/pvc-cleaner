@@ -13,7 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// todo rename package
 package cleaner
 
 import (
@@ -186,21 +185,17 @@ func (cleaner *PVCSubPathCleaner) WatchAndCleanUpSubPathFolders() {
 			continue
 		}
 
-		var delFoldersContentCmd string
 		var volumeMounts []corev1.VolumeMount
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      "source",
 			MountPath: "/workspace/source",
 			SubPath:   ".",
 		})
-		for _, pvc := range pvcToCleanUp {
-			delFoldersContentCmd += "rm -rf /workspace/source/" + pvc.PVCSubPath + ";"
-		}
 
 		log.Println("============ Create new pvc sub-path folder cleaner")
 
 		podName := "clean-empty-pvc-folders-pod" + fmt.Sprintf("%d", time.Now().UnixNano())
-		pvcSubPathCleanerPod := cleaner.getPodCleaner(podName, podName, delFoldersContentCmd, volumeMounts)
+		pvcSubPathCleanerPod := cleaner.getPodCleaner(podName, podName, "/cleaner", volumeMounts, "quay.io/aandriienko/pvc-pod-cleaner")
 		_, err = cleaner.clientset.CoreV1().Pods(cleaner.namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
 		if err != nil {
 			log.Print(err)
@@ -240,7 +235,7 @@ func (cleaner *PVCSubPathCleaner) deleteNotUsedSubPathsFoldersContent() error {
 
 	log.Println("--------- Create new pvc sub-path folder content cleaner pod")
 
-	pvcSubPathCleanerPod := cleaner.getPodCleaner("clean-pvc-pod", "cleaner-pod", delFoldersContentCmd, volumeMounts)
+	pvcSubPathCleanerPod := cleaner.getPodCleaner("clean-pvc-pod", "cleaner-pod", delFoldersContentCmd, volumeMounts, "registry.access.redhat.com/ubi8/ubi")
 
 	_, err = cleaner.clientset.CoreV1().Pods(cleaner.namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
 	if err != nil {
@@ -333,7 +328,7 @@ func (cleaner *PVCSubPathCleaner) getPVCSubPathToCleanUp() ([]*model.PVCSubPath,
 	return pvcToCleanUp, nil
 }
 
-func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFoldersContentCmd string, volumeMounts []corev1.VolumeMount) *corev1.Pod {
+func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFoldersContentCmd string, volumeMounts []corev1.VolumeMount, image string) *corev1.Pod {
 	deadline := int64(5400)
 	labels := make(map[string]string)
 	labels["component"] = label
@@ -343,6 +338,7 @@ func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFo
 			Labels: labels,
 		},
 		Spec: corev1.PodSpec{
+			ServiceAccountName: "pvc-cleaner",
 			RestartPolicy:         "Never",
 			ActiveDeadlineSeconds: &deadline,
 			Containers: []corev1.Container{
@@ -356,7 +352,7 @@ func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFo
 						"-c",
 						delFoldersContentCmd,
 					},
-					Image:        "registry.access.redhat.com/ubi8/ubi",
+					Image: image,
 					VolumeMounts: volumeMounts,
 					WorkingDir:   "/",
 				},
