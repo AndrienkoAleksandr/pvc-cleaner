@@ -79,9 +79,7 @@ func main() {
         log.Fatal(err)
     }
 
-	pvcToCleanUp := []fs.FileInfo{}
-	var wg sync.WaitGroup
-	var delta int
+	pvcsToCleanUp := []fs.FileInfo{}
 	for _, pvcSubPath := range pvcSubPaths {
 		isPresent := false
 		for _, pipelinerun := range pipelineRuns.Items {
@@ -95,13 +93,15 @@ func main() {
 			}
 		}
 		if !isPresent {
-			pvcToCleanUp = append(pvcToCleanUp, pvcSubPath)
-			delta++
-			wg.Add(delta)
+			pvcsToCleanUp = append(pvcsToCleanUp, pvcSubPath)
 		}
 	}
 
-	go cleanUpSubpaths(pvcToCleanUp, wg)
+	var wg sync.WaitGroup
+	for _, pvc := range pvcsToCleanUp {
+		wg.Add(1)
+		go cleanUpSubpaths(pvc, &wg)
+	}
 
 	wg.Wait()
 }
@@ -123,24 +123,25 @@ func watchNewPipelineRuns(pipelineRunApi v1beta1.PipelineRunInterface) {
 
 		// Stop appication, we shouldn't continue cleanup when new pipelinerun executed, because this
 		// new pipelinerun will fail on the pvc without support parallel read/write operation from different pods
-		os.Exit(0) // todo os.Exit(1) ?
+		os.Exit(0)
 	}
 }
 
-func cleanUpSubpaths(pvcToCleanUp []fs.FileInfo, wg sync.WaitGroup) {
+func cleanUpSubpaths(pvc fs.FileInfo, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	for _, pvcToCleanUp := range pvcToCleanUp {
-		path := filepath.Join(sourceVolumeDir, pvcToCleanUp.Name())
-		log.Printf("Remove pvc subpath: %s", path)
-		info, err := os.Stat(path)
-		if err != nil {
-			log.Println(err)
-		}
-		log.Printf("Data folder size is %d", info.Size())
-
-		if err := os.RemoveAll(path); err != nil {
-			log.Println(err.Error())
-		}
+	path := filepath.Join(sourceVolumeDir, pvc.Name())
+	info, err := os.Stat(path)
+	if err != nil {
+		log.Println(err)
+		return
 	}
+	log.Printf("Data folder size is %d", info.Size())
+
+	log.Printf("Remove pvc subpath: %s", path)
+	if err := os.RemoveAll(path); err != nil {
+		log.Println(err.Error())
+		return
+	}
+	log.Printf("Cleanup %s completed", pvc.Name())
 }
