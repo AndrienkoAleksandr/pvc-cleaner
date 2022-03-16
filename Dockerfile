@@ -7,7 +7,7 @@ COPY main.go main.go
 COPY go.sum go.sum
 COPY go.mod go.mod
 
-RUN go mod download && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o pvc-cleaner main.go
+RUN go mod download && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o pvc-cleaner main.go
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal:8.4-210
 

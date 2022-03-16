@@ -22,7 +22,6 @@ import (
 	"path/filepath"
 
 	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/k8s"
-	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/restapi"
 	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/cleaner"
 	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/storage"
 	"github.com/gin-gonic/gin"
@@ -67,12 +66,7 @@ func main() {
 	}
 
 	pipelinesRunApi := tknClientset.TektonV1beta1().PipelineRuns(namespace)
-
 	subPathStorage := storage.NewPVCSubPathsStorage()
-	if err := subPathStorage.Init(); err != nil {
-		log.Fatalf("Failed to init database storage %s", err.Error())
-	}
-
 	cleanerConf := k8s.NewCleanerConfig(clientset, namespace)
 	cleanerConf.CreateIfNotPresent()
 
@@ -83,8 +77,6 @@ func main() {
 	go pvc_cleaner.WatchAndCleanUpSubPathFolders()
 
 	r := gin.Default()
-
-	r.GET("/pipeline-run/list", restapi.GetAllPipelineWithPVCSubPath(subPathStorage))
 
 	r.GET("/ready", func(c *gin.Context) {
 		c.JSON(200, gin.H{
