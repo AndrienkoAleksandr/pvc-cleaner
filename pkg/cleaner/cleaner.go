@@ -163,7 +163,7 @@ func (cleaner *PVCSubPathCleaner) WatchAndCleanUpSubPathFolders() {
 		}
 
 		if cleaner.isActivePipelineRunPresent(pipelineRuns) {
-			log.Println("================Stop, there are running pipelineruns")
+			log.Println("================ Stop, there are running pipelineruns")
 			continue
 		} else {
 			log.Println("================ Cleanup sub-path folders")
@@ -269,7 +269,7 @@ func (cleaner *PVCSubPathCleaner) waitAndDeleteCleanUpPod(podName string, label 
 			}
 			if p.Status.Phase == corev1.PodFailed {
 				log.Println("Pod cleaner failed" + p.Status.Reason + " " + p.Status.Message)
-				cleanUpDone <- true
+				cleanUpDone <- false
 			}
 		}
 	}(cleanUpDone)
@@ -286,7 +286,7 @@ func (cleaner *PVCSubPathCleaner) waitAndDeleteCleanUpPod(podName string, label 
 			ticker.Stop()
 			watch.Stop()
 			defer onDelete(subPaths)
-			fmt.Println("Remove pod cleaner due timeout")
+			fmt.Println("[WARN] Remove pod cleaner due timeout")
 			return cleaner.clientset.CoreV1().Pods(cleaner.namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
 		}
 	}
