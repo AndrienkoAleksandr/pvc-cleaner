@@ -1,4 +1,4 @@
-module github.com/AndrienkoAleksandr/pvc-cleaner
+module github.com/redhat-appstudio/pvc-cleaner
 
 go 1.16
 

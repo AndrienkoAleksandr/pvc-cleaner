@@ -26,7 +26,7 @@ import (
 	"io/fs"
 	"log"
 
-	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/k8s"
+	"github.com/redhat-appstudio/pvc-cleaner/pkg/k8s"
 	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned/typed/pipeline/v1beta1"
@@ -75,9 +75,9 @@ func main() {
 	}
 
 	pvcSubPaths, err := ioutil.ReadDir(sourceVolumeDir)
-    if err != nil {
-        log.Fatal(err)
-    }
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	pvcsToCleanUp := []fs.FileInfo{}
 	for _, pvcSubPath := range pvcSubPaths {
@@ -86,8 +86,8 @@ func main() {
 			if !pvcSubPath.IsDir() {
 				continue
 			}
-			log.Printf("pipelinerun %s and pvc subpath folder name is %s", "pvc-" + pipelinerun.ObjectMeta.Name, pvcSubPath.Name())
-			if "pv-" + pipelinerun.ObjectMeta.Name == pvcSubPath.Name() {
+			log.Printf("pipelinerun %s and pvc subpath folder name is %s", "pvc-"+pipelinerun.ObjectMeta.Name, pvcSubPath.Name())
+			if "pv-"+pipelinerun.ObjectMeta.Name == pvcSubPath.Name() {
 				isPresent = true
 				break
 			}

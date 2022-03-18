@@ -21,10 +21,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/k8s"
-	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/cleaner"
-	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/storage"
 	"github.com/gin-gonic/gin"
+	"github.com/redhat-appstudio/pvc-cleaner/pkg/cleaner"
+	"github.com/redhat-appstudio/pvc-cleaner/pkg/k8s"
+	"github.com/redhat-appstudio/pvc-cleaner/pkg/storage"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"

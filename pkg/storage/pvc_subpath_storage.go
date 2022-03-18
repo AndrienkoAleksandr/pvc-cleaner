@@ -17,12 +17,13 @@ package storage
 
 import (
 	"sync"
-	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/model"
+
+	"github.com/redhat-appstudio/pvc-cleaner/pkg/model"
 )
 
 type PVCSubPathsStorage struct {
 	subPathCache map[string]*model.PVCSubPath
-	mu sync.Mutex
+	mu           sync.Mutex
 }
 
 func NewPVCSubPathsStorage() *PVCSubPathsStorage {

@@ -51,5 +51,15 @@
             },
             "group": "build"
         },
+        {
+            "label": "Format code",
+            "command": "go fmt ./...",
+            "type": "shell",
+            "args": [],
+            "presentation": {
+                "reveal": "always"
+            },
+            "group": "build"
+        },
     ]
 }

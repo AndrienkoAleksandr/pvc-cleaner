@@ -21,9 +21,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/k8s"
-	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/model"
-	"github.com/AndrienkoAleksandr/pvc-cleaner/pkg/storage"
+	"github.com/redhat-appstudio/pvc-cleaner/pkg/k8s"
+	"github.com/redhat-appstudio/pvc-cleaner/pkg/model"
+	"github.com/redhat-appstudio/pvc-cleaner/pkg/storage"
 	watchapi "k8s.io/apimachinery/pkg/watch"
 
 	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
@@ -161,7 +161,7 @@ func (cleaner *PVCSubPathCleaner) WatchAndCleanUpSubPathFolders() {
 			log.Println(err)
 			continue
 		}
-		
+
 		if cleaner.isActivePipelineRunPresent(pipelineRuns) {
 			log.Println("================Stop, there are running pipelineruns")
 			continue
@@ -339,7 +339,7 @@ func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFo
 			Labels: labels,
 		},
 		Spec: corev1.PodSpec{
-			ServiceAccountName: "pvc-cleaner",
+			ServiceAccountName:    "pvc-cleaner",
 			RestartPolicy:         "Never",
 			ActiveDeadlineSeconds: &deadline,
 			Containers: []corev1.Container{
@@ -353,7 +353,7 @@ func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFo
 						"-c",
 						delFoldersContentCmd,
 					},
-					Image: image,
+					Image:        image,
 					VolumeMounts: volumeMounts,
 					WorkingDir:   "/",
 				},
