@@ -10,7 +10,6 @@
             "program": "${fileDirname}",
             "env": {
                 "OUTSIDE_CLUSTER": "true",
-                "DB_PATH": "/tmp/foo.db",
                 "DEBUG": "true"
             },
             "args": [],
