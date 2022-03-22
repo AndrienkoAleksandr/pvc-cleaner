@@ -264,7 +264,7 @@ func (cleaner *PVCSubPathCleaner) waitAndDeleteCleanUpPod(podName string, label 
 				continue
 			}
 			if p.Status.Phase == corev1.PodSucceeded {
-				log.Println("Pod cleaner succeeded")
+				log.Printf("Pod cleaner %s succeeded", podName)
 				cleanUpDone <- true
 			}
 			if p.Status.Phase == corev1.PodFailed {

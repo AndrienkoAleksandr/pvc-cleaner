@@ -33,9 +33,9 @@ spec:
         resources:
           limits:
             cpu: 50m
-            memory: 30Mi
+            memory: 100Mi
           requests:
-            cpu: 25m
+            cpu: 50m
             memory: 20Mi
       serviceAccountName: pvc-cleaner
       terminationGracePeriodSeconds: 10
