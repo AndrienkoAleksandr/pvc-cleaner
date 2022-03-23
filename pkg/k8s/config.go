@@ -16,11 +16,12 @@
 package k8s
 
 import (
+	"github.com/redhat-appstudio/pvc-cleaner/pkg"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-func GetOusideClusterConfig(kubeConfig string) *rest.Config {
+func getOusideClusterConfig(kubeConfig string) *rest.Config {
 	// use the current context in kubeconfig
 	config, err := clientcmd.BuildConfigFromFlags("", kubeConfig)
 	if err != nil {
@@ -30,11 +31,20 @@ func GetOusideClusterConfig(kubeConfig string) *rest.Config {
 	return config
 }
 
-func GetInsideClusterConfig() *rest.Config {
+func getInsideClusterConfig() *rest.Config {
 	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		panic(err.Error())
 	}
 	return config
+}
+
+func GetClusterConfig() *rest.Config {
+	if pkg.IsOutSideClusterConfig() {
+		kubeconfig := pkg.GetClusterConfigPath()
+		return getOusideClusterConfig(kubeconfig)
+	} else {
+		return getInsideClusterConfig()
+	}
 }

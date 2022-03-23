@@ -19,8 +19,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
+	"path/filepath"
+
+	"github.com/redhat-appstudio/pvc-cleaner/pkg"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/k8s"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/model"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/storage"
@@ -38,6 +42,8 @@ import (
 const (
 	CLEANUP_PVC_CONTENT_PERIOD = 3 * time.Minute
 	CLEANUP_TIMEOUT            = 10 * time.Minute
+
+	VOLUME_NAME = "source"
 )
 
 var isPVCSubPathCleanerRunning = false
@@ -113,7 +119,7 @@ func (cleaner *PVCSubPathCleaner) WatchNewPipelineRuns(storage *storage.PVCSubPa
 		log.Printf("Add new pipelineRun with name %s", pipelineRun.ObjectMeta.Name)
 
 		for _, workspace := range pipelineRun.Spec.Workspaces {
-			if workspace.Name == "workspace" {
+			if workspace.Name == pkg.SOURCE_WORKSPACE_NAME {
 				if workspace.SubPath != "" {
 					pvcSubPath := &model.PVCSubPath{PipelineRun: pipelineRun.ObjectMeta.Name, PVCSubPath: workspace.SubPath}
 					storage.AddPVCSubPath(pvcSubPath)
@@ -126,7 +132,7 @@ func (cleaner *PVCSubPathCleaner) WatchNewPipelineRuns(storage *storage.PVCSubPa
 
 func (cleaner *PVCSubPathCleaner) WatchAndCleanUpSubPathFolders() {
 	// Watcher will be closed after some timeout, so we need to re-create watcher https://github.com/kubernetes/client-go/issues/623.
-	// Let's use "NewRetryWatcher" helper for this purpose. 
+	// Let's use "NewRetryWatcher" helper for this purpose.
 	// Initial pipelinerun resource version can be always "1", because watcher after application pod restart doesn't send
 	// old "deleted" events.
 	retryWatcher, err := watchTool.NewRetryWatcher("1", &cache.ListWatch{
@@ -181,8 +187,8 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFolders() error {
 
 	var volumeMounts []corev1.VolumeMount
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
-		Name:      "source",
-		MountPath: "/workspace/source",
+		Name:      VOLUME_NAME,
+		MountPath: pkg.SOURCE_VOLUME_DIR,
 		SubPath:   ".",
 	})
 
@@ -192,7 +198,8 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFolders() error {
 	}()
 
 	podName := "clean-pvc-folders-pod"
-	pvcSubPathCleanerPod := cleaner.getPodCleaner(podName, podName, "/cleaner", volumeMounts, "quay.io/aandriienko/pvc-pod-cleaner")
+	podImage := os.Getenv("PVC_POD_CLEANER_IMAGE")
+	pvcSubPathCleanerPod := cleaner.getPodCleaner(podName, podName, "/cleaner", volumeMounts, podImage)
 	_, err := cleaner.clientset.CoreV1().Pods(cleaner.namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
 	if err != nil {
 		return err
@@ -227,10 +234,10 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFoldersContent() error {
 	var delFoldersContentCmd string
 	var volumeMounts []corev1.VolumeMount
 	for _, pvc := range pvcToCleanUp {
-		delFoldersContentCmd += "cd /workspace/source/" + pvc.PVCSubPath + "; ls -A | xargs rm -rfv;"
+		delFoldersContentCmd += "cd " + filepath.Join(pkg.SOURCE_VOLUME_DIR, pvc.PVCSubPath) + "; ls -A | xargs rm -rfv;"
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "source",
-			MountPath: "/workspace/source/" + pvc.PVCSubPath,
+			Name:      pkg.SOURCE_WORKSPACE_NAME,
+			MountPath: pkg.SOURCE_VOLUME_DIR,
 			SubPath:   pvc.PVCSubPath,
 		})
 	}
@@ -354,7 +361,7 @@ func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFo
 			},
 			Volumes: []corev1.Volume{
 				{
-					Name: "source",
+					Name: pkg.SOURCE_WORKSPACE_NAME,
 					VolumeSource: corev1.VolumeSource{
 						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 							ClaimName: "app-studio-default-workspace",

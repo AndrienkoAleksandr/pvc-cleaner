@@ -16,37 +16,19 @@
 package main
 
 import (
-	"flag"
-	"log"
-	"os"
-	"path/filepath"
-
 	"github.com/gin-gonic/gin"
+	"github.com/redhat-appstudio/pvc-cleaner/pkg"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/cleaner"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/k8s"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/storage"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/util/homedir"
+	"log"
 )
 
 func main() {
-	isOutSideClusterConfig := os.Getenv("OUTSIDE_CLUSTER")
-	var config *rest.Config
-	if isOutSideClusterConfig == "true" {
-		var kubeconfig *string
-		if home := homedir.HomeDir(); home != "" {
-			kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
-		} else {
-			kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
-		}
-		flag.Parse()
-
-		config = k8s.GetOusideClusterConfig(*kubeconfig)
-	} else {
-		config = k8s.GetInsideClusterConfig()
-	}
+	pkg.ParseFlags()
+	config := k8s.GetClusterConfig()
 
 	// create the clientset
 	clientset, err := kubernetes.NewForConfig(config)

@@ -17,42 +17,30 @@ package main
 
 import (
 	"context"
-	"flag"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
 
-	"io/fs"
-	"log"
-
+	"github.com/redhat-appstudio/pvc-cleaner/pkg"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/k8s"
 	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned/typed/pipeline/v1beta1"
+	"io/fs"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	watchapi "k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/util/homedir"
+	"log"
 )
 
-const sourceVolumeDir = "/workspace/source"
-
 func main() {
-	isOutSideClusterConfig := os.Getenv("OUTSIDE_CLUSTER")
-	var config *rest.Config
-	if isOutSideClusterConfig == "true" {
-		var kubeconfig *string
-		if home := homedir.HomeDir(); home != "" {
-			kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
-		} else {
-			kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
-		}
-		flag.Parse()
+	pkg.ParseFlags()
+	config := k8s.GetClusterConfig()
 
-		config = k8s.GetOusideClusterConfig(*kubeconfig)
-	} else {
-		config = k8s.GetInsideClusterConfig()
+	// create Tekton clientset
+	tknClientset, err := versioned.NewForConfig(config)
+	if err != nil {
+		log.Fatalf("failed to create pipeline clientset %s", err)
 	}
 
 	namespace, err := k8s.GetNamespace()
@@ -60,11 +48,6 @@ func main() {
 		log.Fatalf("failed to create pipeline clientset %s", err)
 	}
 
-	// create Tekton clientset
-	tknClientset, err := versioned.NewForConfig(config)
-	if err != nil {
-		log.Fatalf("failed to create pipeline clientset %s", err)
-	}
 	pipelineRunApi := tknClientset.TektonV1beta1().PipelineRuns(namespace)
 
 	go watchNewPipelineRuns(pipelineRunApi)
@@ -74,30 +57,27 @@ func main() {
 		log.Fatal(err)
 	}
 
-	pvcSubPaths, err := ioutil.ReadDir(sourceVolumeDir)
+	pvcSubPaths, err := ioutil.ReadDir(pkg.SOURCE_VOLUME_DIR)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	pvcsToCleanUp := []fs.FileInfo{}
 	for _, pvcSubPath := range pvcSubPaths {
-		isPresent := false
 		for _, pipelinerun := range pipelineRuns.Items {
 			if !pvcSubPath.IsDir() {
 				continue
 			}
 			log.Printf("pipelinerun %s and pvc subpath folder name is %s", "pvc-"+pipelinerun.ObjectMeta.Name, pvcSubPath.Name())
 			if "pv-"+pipelinerun.ObjectMeta.Name == pvcSubPath.Name() {
-				isPresent = true
+				pvcsToCleanUp = append(pvcsToCleanUp, pvcSubPath)
 				break
 			}
-		}
-		if !isPresent {
-			pvcsToCleanUp = append(pvcsToCleanUp, pvcSubPath)
 		}
 	}
 
 	var wg sync.WaitGroup
+	// Remove pvc subfolders in parallel.
 	for _, pvc := range pvcsToCleanUp {
 		wg.Add(1)
 		go cleanUpSubpaths(pvc, &wg)
@@ -130,7 +110,7 @@ func watchNewPipelineRuns(pipelineRunApi v1beta1.PipelineRunInterface) {
 func cleanUpSubpaths(pvc fs.FileInfo, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	path := filepath.Join(sourceVolumeDir, pvc.Name())
+	path := filepath.Join(pkg.SOURCE_VOLUME_DIR, pvc.Name())
 	info, err := os.Stat(path)
 	if err != nil {
 		log.Println(err)
