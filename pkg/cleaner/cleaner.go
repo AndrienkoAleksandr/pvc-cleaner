@@ -234,10 +234,11 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFoldersContent() error {
 	var delFoldersContentCmd string
 	var volumeMounts []corev1.VolumeMount
 	for _, pvc := range pvcToCleanUp {
-		delFoldersContentCmd += "cd " + filepath.Join(pkg.SOURCE_VOLUME_DIR, pvc.PVCSubPath) + "; ls -A | xargs rm -rfv;"
+		pvcSubPath := filepath.Join(pkg.SOURCE_VOLUME_DIR, pvc.PVCSubPath)
+		delFoldersContentCmd += "cd " + pvcSubPath + "; ls -A | xargs rm -rfv;"
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      VOLUME_NAME,
-			MountPath: pkg.SOURCE_VOLUME_DIR,
+			MountPath: pvcSubPath,
 			SubPath:   pvc.PVCSubPath,
 		})
 	}
