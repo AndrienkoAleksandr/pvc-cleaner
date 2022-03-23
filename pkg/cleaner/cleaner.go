@@ -36,8 +36,8 @@ import (
 )
 
 const (
-	DEF_PERIOD      = 3 * time.Minute
-	CLEANUP_TIMEOUT = 600
+	CLEANUP_PVC_CONTENT_PERIOD = 3 * time.Minute
+	CLEANUP_TIMEOUT            = 10 * time.Minute
 )
 
 var isPVCSubPathCleanerRunning = false
@@ -62,7 +62,7 @@ func NewPVCSubPathCleaner(pipelineRunApi v1beta1.PipelineRunInterface, subPathSt
 
 func (cleaner *PVCSubPathCleaner) ScheduleCleanUpSubPathFoldersContent() {
 	for {
-		time.Sleep(DEF_PERIOD)
+		time.Sleep(CLEANUP_PVC_CONTENT_PERIOD)
 
 		log.Println("------------ Schedule cleanup new subpath folders content")
 		if err := cleaner.cleanUpSubPathFoldersContent(); err != nil {
@@ -111,17 +111,14 @@ func (cleaner *PVCSubPathCleaner) WatchNewPipelineRuns(storage *storage.PVCSubPa
 
 		log.Printf("************ Add new pipelineRun with name %s", pipelineRun.ObjectMeta.Name)
 
-		var subPath string
 		for _, workspace := range pipelineRun.Spec.Workspaces {
 			if workspace.Name == "workspace" {
-				subPath = workspace.SubPath
+				if workspace.SubPath != "" {
+					pvcSubPath := &model.PVCSubPath{PipelineRun: pipelineRun.ObjectMeta.Name, PVCSubPath: workspace.SubPath}
+					storage.AddPVCSubPath(pvcSubPath)
+				}
 				break
 			}
-		}
-
-		if subPath != "" {
-			pvcSubPath := &model.PVCSubPath{PipelineRun: pipelineRun.ObjectMeta.Name, PVCSubPath: subPath}
-			storage.AddPVCSubPath(pvcSubPath)
 		}
 	}
 }
@@ -177,10 +174,6 @@ func (cleaner *PVCSubPathCleaner) WatchAndCleanUpSubPathFolders() {
 }
 
 func (cleaner *PVCSubPathCleaner) cleanUpSubPathFolders() error {
-	defer func() {
-		isPVCSubPathCleanerRunning = false
-	}()
-
 	log.Println("================ Create new pvc sub-path folder cleaner pod")
 
 	var volumeMounts []corev1.VolumeMount
@@ -191,6 +184,10 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFolders() error {
 	})
 
 	isPVCSubPathCleanerRunning = true
+	defer func() {
+		isPVCSubPathCleanerRunning = false
+	}()
+
 	podName := "clean-pvc-folders-pod"
 	pvcSubPathCleanerPod := cleaner.getPodCleaner(podName, podName, "/cleaner", volumeMounts, "quay.io/aandriienko/pvc-pod-cleaner")
 	_, err := cleaner.clientset.CoreV1().Pods(cleaner.namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
@@ -274,7 +271,7 @@ func (cleaner *PVCSubPathCleaner) waitAndDeleteCleanUpPod(podName string, label 
 		}
 	}(cleanUpDone)
 
-	ticker := time.NewTicker(CLEANUP_TIMEOUT * time.Second)
+	ticker := time.NewTicker(CLEANUP_TIMEOUT)
 	for {
 		select {
 		case <-cleanUpDone:
