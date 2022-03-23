@@ -201,6 +201,11 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFolders() error {
 }
 
 func (cleaner *PVCSubPathCleaner) cleanUpSubPathFoldersContent() error {
+	if isPVCSubPathCleanerRunning {
+		log.Println("--------- Skip pvc sub-path folder content cleaner, pvc sub-path folder cleaner is running.")
+		return nil
+	}
+
 	pipelineRuns, err := cleaner.pipelineRunApi.List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
@@ -213,11 +218,6 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFoldersContent() error {
 
 	if len(pvcToCleanUp) == 0 {
 		log.Println("--------- Nothing to cleanup")
-		return nil
-	}
-
-	if isPVCSubPathCleanerRunning {
-		log.Println("--------- Skip pvc sub-path folder content cleaner, pvc sub-path folder cleaner is running.")
 		return nil
 	}
 
@@ -301,15 +301,11 @@ func (cleaner *PVCSubPathCleaner) getPVCSubPathToContentCleanUp(pipelineRuns *pi
 
 	pvcToCleanUp := []*model.PVCSubPath{}
 	for _, pvcSubPath := range subPaths {
-		isPresent := false
 		for _, pipelinerun := range pipelineRuns.Items {
 			if pipelinerun.ObjectMeta.Name == pvcSubPath.PipelineRun {
-				isPresent = true
+				pvcToCleanUp = append(pvcToCleanUp, pvcSubPath)
 				break
 			}
-		}
-		if !isPresent {
-			pvcToCleanUp = append(pvcToCleanUp, pvcSubPath)
 		}
 	}
 	return pvcToCleanUp, nil
