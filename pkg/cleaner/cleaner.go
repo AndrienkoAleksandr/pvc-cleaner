@@ -104,6 +104,7 @@ func (cleaner *PVCSubPathCleaner) WatchNewPipelineRuns(storage *storage.PVCSubPa
 		if !ok {
 			continue
 		}
+		// Update initial  pipelinerun resource version to prevent send old "add" events after application pod restart.
 		if err = cleaner.conf.UpdateWatchResourceVersion(pipelineRun.ObjectMeta.ResourceVersion); err != nil {
 			log.Println(err)
 			continue
@@ -125,7 +126,9 @@ func (cleaner *PVCSubPathCleaner) WatchNewPipelineRuns(storage *storage.PVCSubPa
 
 func (cleaner *PVCSubPathCleaner) WatchAndCleanUpSubPathFolders() {
 	// Watcher will be closed after some timeout, so we need to re-create watcher https://github.com/kubernetes/client-go/issues/623.
-	// Let's use "NewRetryWatcher" helper for this purpose.
+	// Let's use "NewRetryWatcher" helper for this purpose. 
+	// Initial pipelinerun resource version can be always "1", because watcher after application pod restart doesn't send
+	// old "deleted" events.
 	retryWatcher, err := watchTool.NewRetryWatcher("1", &cache.ListWatch{
 		WatchFunc: func() func(options metav1.ListOptions) (watchapi.Interface, error) {
 			return func(options metav1.ListOptions) (watchapi.Interface, error) {
