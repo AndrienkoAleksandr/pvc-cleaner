@@ -312,14 +312,12 @@ func (cleaner *PVCSubPathCleaner) getPVCSubPathToContentCleanUp(pipelineRuns *pi
 }
 
 func (cleaner *PVCSubPathCleaner) isActivePipelineRunPresent(pipelineRuns *pipelinev1.PipelineRunList) bool {
-	isActivePipelineRunPresent := false
 	for _, pipelineRun := range pipelineRuns.Items {
 		if len(pipelineRun.Status.Conditions) == 0 || pipelineRun.Status.Conditions[0].Reason == "Running" {
-			isActivePipelineRunPresent = true
-			break
+			return true
 		}
 	}
-	return isActivePipelineRunPresent
+	return false
 }
 
 func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFoldersContentCmd string, volumeMounts []corev1.VolumeMount, image string) *corev1.Pod {
