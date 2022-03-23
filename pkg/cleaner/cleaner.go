@@ -236,7 +236,7 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFoldersContent() error {
 	for _, pvc := range pvcToCleanUp {
 		delFoldersContentCmd += "cd " + filepath.Join(pkg.SOURCE_VOLUME_DIR, pvc.PVCSubPath) + "; ls -A | xargs rm -rfv;"
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      pkg.SOURCE_WORKSPACE_NAME,
+			Name:      VOLUME_NAME,
 			MountPath: pkg.SOURCE_VOLUME_DIR,
 			SubPath:   pvc.PVCSubPath,
 		})
@@ -361,7 +361,7 @@ func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFo
 			},
 			Volumes: []corev1.Volume{
 				{
-					Name: pkg.SOURCE_WORKSPACE_NAME,
+					Name: VOLUME_NAME,
 					VolumeSource: corev1.VolumeSource{
 						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 							ClaimName: "app-studio-default-workspace",
