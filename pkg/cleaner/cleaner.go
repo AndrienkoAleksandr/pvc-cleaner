@@ -311,14 +311,20 @@ func (cleaner *PVCSubPathCleaner) getPVCSubPathToContentCleanUp(pipelineRuns *pi
 	log.Printf("All pvc sub-path folders to filter: %d", len(subPaths))
 
 	pvcToCleanUp := []*model.PVCSubPath{}
+
 	for _, pvcSubPath := range subPaths {
+		isPresent := false
 		for _, pipelinerun := range pipelineRuns.Items {
 			if pipelinerun.ObjectMeta.Name == pvcSubPath.PipelineRun {
-				pvcToCleanUp = append(pvcToCleanUp, pvcSubPath)
+				isPresent = true
 				break
 			}
 		}
+		if !isPresent {
+			pvcToCleanUp = append(pvcToCleanUp, pvcSubPath)
+		}
 	}
+
 	return pvcToCleanUp, nil
 }
 
