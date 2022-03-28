@@ -283,21 +283,16 @@ func (cleaner *PVCSubPathCleaner) waitAndDeleteCleanUpPod(podName string, label 
 	}(cleanUpDone)
 
 	ticker := time.NewTicker(CLEANUP_TIMEOUT)
-	for {
-		select {
+	select {
 		case <-cleanUpDone:
-			ticker.Stop()
-			watch.Stop()
-			defer onDelete(subPaths)
-			return cleaner.clientset.CoreV1().Pods(cleaner.namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
+			fmt.Println("[INFO] Pod cleaner finished successfully")
 		case <-ticker.C:
-			ticker.Stop()
-			watch.Stop()
-			defer onDelete(subPaths)
 			fmt.Println("[WARN] Remove pod cleaner due timeout")
-			return cleaner.clientset.CoreV1().Pods(cleaner.namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
-		}
 	}
+	ticker.Stop()
+	watch.Stop()
+	defer onDelete(subPaths)
+	return cleaner.clientset.CoreV1().Pods(cleaner.namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
 }
 
 func (cleaner *PVCSubPathCleaner) deletePVCFromStorage(pvcSubPaths []*model.PVCSubPath) {
