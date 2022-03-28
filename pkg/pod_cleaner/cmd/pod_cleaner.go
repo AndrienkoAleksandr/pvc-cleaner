@@ -22,15 +22,16 @@ import (
 	"path/filepath"
 	"sync"
 
+	"io/fs"
+	"log"
+
 	"github.com/redhat-appstudio/pvc-cleaner/pkg"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/k8s"
 	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned/typed/pipeline/v1beta1"
-	"io/fs"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	watchapi "k8s.io/apimachinery/pkg/watch"
-	"log"
 )
 
 func main() {
@@ -64,15 +65,21 @@ func main() {
 
 	pvcsToCleanUp := []fs.FileInfo{}
 	for _, pvcSubPath := range pvcSubPaths {
+		log.Printf("Pvc sub-folder is %s ", pvcSubPath.Name())
+		if !pvcSubPath.IsDir() {
+			continue
+		}
+
+		isPresent := false
 		for _, pipelinerun := range pipelineRuns.Items {
-			if !pvcSubPath.IsDir() {
-				continue
-			}
 			log.Printf("pipelinerun %s and pvc subpath folder name is %s", "pvc-"+pipelinerun.ObjectMeta.Name, pvcSubPath.Name())
 			if "pv-"+pipelinerun.ObjectMeta.Name == pvcSubPath.Name() {
-				pvcsToCleanUp = append(pvcsToCleanUp, pvcSubPath)
+				isPresent = true
 				break
 			}
+		}
+		if !isPresent {
+			pvcsToCleanUp = append(pvcsToCleanUp, pvcSubPath)
 		}
 	}
 
