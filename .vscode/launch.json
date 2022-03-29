@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "remotePath": "",
+            "program": "${fileDirname}",
+            "env": {
+                "OUTSIDE_CLUSTER": "true",
+                "DEBUG": "true"
+            },
+            "args": [],
+            "showLog": false
+        }
+    ]
+}

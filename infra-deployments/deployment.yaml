@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pvc-cleaner
+  labels:
+    app: pvc-cleaner
+spec:
+  selector:
+    matchLabels:
+      app: pvc-cleaner
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: pvc-cleaner
+    spec:
+      containers:
+      - command:
+        - /pvc-cleaner
+        env:
+          - name: "PVC_POD_CLEANER_IMAGE"
+            value: "quay.io/redhat-appstudio/pvc-pod-cleaner"
+        ports:
+        - containerPort: 8080
+        image: quay.io/redhat-appstudio/pvc-cleaner
+        imagePullPolicy: Always
+        name: pvc-cleaner
+        securityContext:
+          allowPrivilegeEscalation: false
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 50m
+            memory: 100Mi
+          requests:
+            cpu: 25m
+            memory: 20Mi
+      serviceAccountName: pvc-cleaner
+      terminationGracePeriodSeconds: 10
