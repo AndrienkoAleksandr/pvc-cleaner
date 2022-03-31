@@ -4,8 +4,8 @@ kind: Kustomization
 namespace: default
 
 resources:
+  - service-account.yaml
   - cluster-role.yaml
   - cluster-rolebinding.yaml
-  - service-account.yaml
   - deployment.yaml
   - service.yaml

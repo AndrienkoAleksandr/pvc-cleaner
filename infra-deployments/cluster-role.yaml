@@ -7,9 +7,7 @@ rules:
 - apiGroups:
     - tekton.dev
   resources:
-    # - taskruns
     - pipelineruns
-    # - taskruns/status
     - pipelineruns/status
   verbs:
     - create
@@ -41,14 +39,12 @@ rules:
   verbs:
     - get
     - create
-    # - update
     - delete
 - apiGroups:
-  - ''
+    - ''
   resources:
-  - serviceaccounts
+    - serviceaccounts
   verbs:
     - get
     - create
-    # - update
     - delete
