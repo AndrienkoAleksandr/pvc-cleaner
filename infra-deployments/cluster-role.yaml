@@ -7,9 +7,9 @@ rules:
 - apiGroups:
     - tekton.dev
   resources:
-    - taskruns
+    # - taskruns
     - pipelineruns
-    - taskruns/status
+    # - taskruns/status
     - pipelineruns/status
   verbs:
     - create
@@ -32,4 +32,23 @@ rules:
   - get
   - list
   - update
-  - watch 
+  - watch
+- apiGroups:
+    - rbac.authorization.k8s.io
+  resources:
+    - roles
+    - rolebindings
+  verbs:
+    - get
+    - create
+    # - update
+    - delete
+- apiGroups:
+  - ''
+  resources:
+  - serviceaccounts
+  verbs:
+    - get
+    - create
+    # - update
+    - delete
