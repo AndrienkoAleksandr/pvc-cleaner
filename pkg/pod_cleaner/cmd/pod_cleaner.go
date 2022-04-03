@@ -38,6 +38,8 @@ func main() {
 	pkg.ParseFlags()
 	config := k8s.GetClusterConfig()
 
+	log.Println("Create config")
+
 	// create Tekton clientset
 	tknClientset, err := versioned.NewForConfig(config)
 	if err != nil {
@@ -49,24 +51,30 @@ func main() {
 		log.Fatalf("failed to create pipeline clientset %s", err)
 	}
 
+	log.Println("Got namespace")
+
 	pipelineRunApi := tknClientset.TektonV1beta1().PipelineRuns(namespace)
 
+	log.Println("Watch new pipelineruns...")
 	go watchNewPipelineRuns(pipelineRunApi)
 
 	pipelineRuns, err := pipelineRunApi.List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Printf("Amount pipelineruns is %d", len(pipelineRuns.Items))
 
 	pvcSubPaths, err := ioutil.ReadDir(pkg.SOURCE_VOLUME_DIR)
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Printf("Amount pvc subpath %d", len(pvcSubPaths))
 
 	pvcsToCleanUp := []fs.FileInfo{}
 	for _, pvcSubPath := range pvcSubPaths {
 		log.Printf("Pvc sub-folder is %s ", pvcSubPath.Name())
 		if !pvcSubPath.IsDir() {
+			log.Println("=========Skip file")
 			continue
 		}
 
@@ -74,12 +82,17 @@ func main() {
 		for _, pipelinerun := range pipelineRuns.Items {
 			log.Printf("pipelinerun %s and pvc subpath folder name is %s", "pvc-"+pipelinerun.ObjectMeta.Name, pvcSubPath.Name())
 			if "pv-"+pipelinerun.ObjectMeta.Name == pvcSubPath.Name() {
+				if !pipelinerun.ObjectMeta.DeletionTimestamp.IsZero() {
+					log.Printf("!!!!!!!!!!!!!!!!!!!!! Timestamp = %s", pipelinerun.ObjectMeta.Name)
+				}
 				isPresent = true
 				break
 			}
 		}
 		if !isPresent {
 			pvcsToCleanUp = append(pvcsToCleanUp, pvcSubPath)
+		} else {
+			log.Printf("!!! Skip %s ", pvcSubPath)
 		}
 	}
 
@@ -87,10 +100,13 @@ func main() {
 	// Remove pvc subfolders in parallel.
 	for _, pvc := range pvcsToCleanUp {
 		wg.Add(1)
-		go cleanUpSubpaths(pvc, &wg)
+		log.Printf("Cleanup subpath %s", pvc.Name())
+		cleanUpSubpaths(pvc, &wg)
 	}
 
-	wg.Wait()
+	log.Println("Wait cleanup....")
+	// wg.Wait()
+	log.Println("Done!!!!")
 }
 
 func watchNewPipelineRuns(pipelineRunApi v1beta1.PipelineRunInterface) {
@@ -108,6 +124,7 @@ func watchNewPipelineRuns(pipelineRunApi v1beta1.PipelineRunInterface) {
 			continue
 		}
 
+		log.Println("Ops... Stop pod....")
 		// Stop appication, we shouldn't continue cleanup when new pipelinerun executed, because this
 		// new pipelinerun will fail on the pvc without support parallel read/write operation from different pods
 		os.Exit(0)
@@ -118,6 +135,7 @@ func cleanUpSubpaths(pvc fs.FileInfo, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	path := filepath.Join(pkg.SOURCE_VOLUME_DIR, pvc.Name())
+	log.Printf("Joined path is %s", path)
 	info, err := os.Stat(path)
 	if err != nil {
 		log.Println(err)
@@ -130,5 +148,10 @@ func cleanUpSubpaths(pvc fs.FileInfo, wg *sync.WaitGroup) {
 		log.Println(err.Error())
 		return
 	}
-	log.Printf("Cleanup %s completed", pvc.Name())
+
+	_, err = os.Stat(path)
+	if !os.IsNotExist(err) {
+		log.Fatal("============================ Total fail!!! File is still present!!!!")
+	}
+	log.Printf("Cleanup %s completed", path)
 }

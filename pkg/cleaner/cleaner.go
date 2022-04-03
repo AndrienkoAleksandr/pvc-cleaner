@@ -16,8 +16,10 @@
 package cleaner
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"time"
@@ -28,15 +30,14 @@ import (
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/k8s"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/model"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/storage"
-	watchapi "k8s.io/apimachinery/pkg/watch"
 
 	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned/typed/pipeline/v1beta1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/cache"
-	watchTool "k8s.io/client-go/tools/watch"
 )
 
 const (
@@ -44,6 +45,10 @@ const (
 	CLEANUP_TIMEOUT            = 10 * time.Minute
 
 	VOLUME_NAME = "source"
+
+	CLEANER_POD_ROLE            = "pod-cleaner-role"
+	CLEANER_POD_ROLEBINDING     = "pod-cleaner-rolebinding"
+	CLEANER_POD_SERVICE_ACCOUNT = "pod-cleaner-service-account"
 )
 
 var isPVCSubPathCleanerRunning = false
@@ -77,109 +82,37 @@ func (cleaner *PVCSubPathCleaner) ScheduleCleanUpSubPathFoldersContent() {
 	}
 }
 
-func (cleaner *PVCSubPathCleaner) WatchNewPipelineRuns(storage *storage.PVCSubPathsStorage) {
-	resourceVersion, err := cleaner.conf.GetWatchResourceVersion()
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("Resource version for watch add operation is %s", resourceVersion)
+func (cleaner *PVCSubPathCleaner) AddNewPVC(pipelineRun *pipelinev1.PipelineRun) {
+	log.Printf("Add new pipelineRun with name %s", pipelineRun.ObjectMeta.Name)
 
-	// Watcher will be closed after some timeout, so we need to re-create watcher https://github.com/kubernetes/client-go/issues/623.
-	// Let's use "NewRetryWatcher" helper for this purpose.
-	retryWatcher, err := watchTool.NewRetryWatcher(resourceVersion, &cache.ListWatch{
-		WatchFunc: func() func(options metav1.ListOptions) (watchapi.Interface, error) {
-			return func(options metav1.ListOptions) (watchapi.Interface, error) {
-				return cleaner.pipelineRunApi.Watch(context.TODO(), metav1.ListOptions{})
+	for _, workspace := range pipelineRun.Spec.Workspaces {
+		if workspace.Name == pkg.SOURCE_WORKSPACE_NAME {
+			if workspace.SubPath != "" {
+				pvcSubPath := &model.PVCSubPath{PipelineRun: pipelineRun.ObjectMeta.Name, PVCSubPath: workspace.SubPath}
+				cleaner.subPathStorage.AddPVCSubPath(pvcSubPath)
 			}
-		}(),
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for {
-		event, ok := <-retryWatcher.ResultChan()
-		if !ok {
-			return
-		}
-
-		if event.Type != watchapi.Added {
-			continue
-		}
-		pipelineRun, ok := event.Object.(*pipelinev1.PipelineRun)
-		if !ok {
-			continue
-		}
-		// Update initial  pipelinerun resource version to prevent send old "add" events after application pod restart.
-		if err = cleaner.conf.UpdateWatchResourceVersion(pipelineRun.ObjectMeta.ResourceVersion); err != nil {
-			log.Println(err)
-			continue
-		}
-
-		log.Printf("Add new pipelineRun with name %s", pipelineRun.ObjectMeta.Name)
-
-		for _, workspace := range pipelineRun.Spec.Workspaces {
-			if workspace.Name == pkg.SOURCE_WORKSPACE_NAME {
-				if workspace.SubPath != "" {
-					pvcSubPath := &model.PVCSubPath{PipelineRun: pipelineRun.ObjectMeta.Name, PVCSubPath: workspace.SubPath}
-					storage.AddPVCSubPath(pvcSubPath)
-				}
-				break
-			}
+			break
 		}
 	}
 }
 
-func (cleaner *PVCSubPathCleaner) WatchAndCleanUpSubPathFolders() {
-	// Watcher will be closed after some timeout, so we need to re-create watcher https://github.com/kubernetes/client-go/issues/623.
-	// Let's use "NewRetryWatcher" helper for this purpose.
-	// Initial pipelinerun resource version can be always "1", because watcher after application pod restart doesn't send
-	// old "deleted" events.
-	retryWatcher, err := watchTool.NewRetryWatcher("1", &cache.ListWatch{
-		WatchFunc: func() func(options metav1.ListOptions) (watchapi.Interface, error) {
-			return func(options metav1.ListOptions) (watchapi.Interface, error) {
-				return cleaner.pipelineRunApi.Watch(context.TODO(), metav1.ListOptions{})
-			}
-		}(),
-	})
+func (cleaner *PVCSubPathCleaner) CleanupSubFolders() error {
+	pipelineRuns, err := cleaner.pipelineRunApi.List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
-	for {
-		event, ok := <-retryWatcher.ResultChan()
-		if !ok {
-			return
-		}
+	if cleaner.isActivePipelineRunPresent(pipelineRuns) {
+		log.Println("Stop, there are running pipelineruns")
+	} else {
+		log.Println("Cleanup sub-path folders")
 
-		if event.Type != watchapi.Deleted {
-			continue
-		}
-		pipelineRun, ok := event.Object.(*pipelinev1.PipelineRun)
-		if !ok {
-			continue
-		}
-
-		log.Println(fmt.Sprintf("Event type: %v, pipelinerun: %s,amount workspaces: %d", event.Type, pipelineRun.ObjectMeta.Name, len(pipelineRun.Spec.Workspaces)))
-
-		pipelineRuns, err := cleaner.pipelineRunApi.List(context.TODO(), metav1.ListOptions{})
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-
-		if cleaner.isActivePipelineRunPresent(pipelineRuns) {
-			log.Println("Stop, there are running pipelineruns")
-			continue
-		} else {
-			log.Println("Cleanup sub-path folders")
-
-			if err := cleaner.cleanUpSubPathFolders(); err != nil {
-				log.Print(err)
-				continue
-			}
+		if err := cleaner.cleanUpSubPathFolders(); err != nil {
+			return err
 		}
 	}
+
+	return nil
 }
 
 func (cleaner *PVCSubPathCleaner) cleanUpSubPathFolders() error {
@@ -284,13 +217,32 @@ func (cleaner *PVCSubPathCleaner) waitAndDeleteCleanUpPod(podName string, label 
 
 	ticker := time.NewTicker(CLEANUP_TIMEOUT)
 	select {
-		case <-cleanUpDone:
-			fmt.Println("[INFO] Pod cleaner finished successfully")
-		case <-ticker.C:
-			fmt.Println("[WARN] Remove pod cleaner due timeout")
+	case <-cleanUpDone:
+		fmt.Println("[INFO] Pod cleaner finished successfully")
+	case <-ticker.C:
+		fmt.Println("[WARN] Remove pod cleaner due timeout")
 	}
 	ticker.Stop()
 	watch.Stop()
+
+	req := cleaner.clientset.CoreV1().Pods(cleaner.namespace).GetLogs(podName, &corev1.PodLogOptions{})
+
+	podLogs, err := req.Stream(context.TODO())
+	if err != nil {
+		log.Fatal("error in opening stream")
+	}
+	defer podLogs.Close()
+
+	buf := new(bytes.Buffer)
+	_, err = io.Copy(buf, podLogs)
+	if err != nil {
+		log.Fatal("error in opening stream")
+	}
+	str := buf.String()
+	log.Println("------")
+	log.Print(str)
+	log.Println("------")
+
 	defer onDelete(subPaths)
 	return cleaner.clientset.CoreV1().Pods(cleaner.namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
 }
@@ -332,6 +284,95 @@ func (cleaner *PVCSubPathCleaner) isActivePipelineRunPresent(pipelineRuns *pipel
 	return false
 }
 
+func (cleaner *PVCSubPathCleaner) ProvidePodCleanerPermissions() error {
+	// create service account if not exists
+	corev1api := cleaner.clientset.CoreV1()
+
+	_, err := corev1api.ServiceAccounts(cleaner.namespace).Get(context.TODO(), CLEANER_POD_SERVICE_ACCOUNT, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			if _, err = corev1api.ServiceAccounts(cleaner.namespace).Create(context.TODO(), cleaner.getServiceAccount(), metav1.CreateOptions{}); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	rbacApi := cleaner.clientset.RbacV1()
+
+	// create role if not exists
+	_, err = rbacApi.Roles(cleaner.namespace).Get(context.TODO(), CLEANER_POD_ROLE, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			if _, err = rbacApi.Roles(cleaner.namespace).Create(context.TODO(), cleaner.getRole(), metav1.CreateOptions{}); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	// create rolebinding if not exists
+	_, err = rbacApi.RoleBindings(cleaner.namespace).Get(context.TODO(), CLEANER_POD_ROLEBINDING, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			if _, err = rbacApi.RoleBindings(cleaner.namespace).Create(context.TODO(), cleaner.getRolebinding(), metav1.CreateOptions{}); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (cleaner *PVCSubPathCleaner) getRole() *rbacv1.Role {
+	return &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      CLEANER_POD_ROLE,
+			Namespace: cleaner.namespace,
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"tekton.dev"},
+				Resources: []string{"pipelineruns", "pipelineruns/status"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+		},
+	}
+}
+
+func (cleaner *PVCSubPathCleaner) getRolebinding() *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      CLEANER_POD_ROLEBINDING,
+			Namespace: cleaner.namespace,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind: "ServiceAccount",
+				Name: CLEANER_POD_SERVICE_ACCOUNT,
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     CLEANER_POD_ROLE,
+		},
+	}
+}
+
+func (cleaner *PVCSubPathCleaner) getServiceAccount() *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      CLEANER_POD_SERVICE_ACCOUNT,
+			Namespace: cleaner.namespace,
+		},
+	}
+}
+
 func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFoldersContentCmd string, volumeMounts []corev1.VolumeMount, image string) *corev1.Pod {
 	deadline := int64(5400)
 	labels := make(map[string]string)
@@ -342,7 +383,7 @@ func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFo
 			Labels: labels,
 		},
 		Spec: corev1.PodSpec{
-			ServiceAccountName:    "pvc-cleaner",
+			ServiceAccountName:    CLEANER_POD_SERVICE_ACCOUNT,
 			RestartPolicy:         "Never",
 			ActiveDeadlineSeconds: &deadline,
 			Containers: []corev1.Container{
