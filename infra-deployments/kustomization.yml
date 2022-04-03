@@ -4,6 +4,7 @@ kind: Kustomization
 namespace: pvc-cleaner
 
 resources:
+  - namespace.yaml
   - service-account.yaml
   - cluster-role.yaml
   - cluster-rolebinding.yaml
