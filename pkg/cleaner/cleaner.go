@@ -22,6 +22,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"path/filepath"
@@ -124,6 +125,11 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFolders() error {
 		MountPath: pkg.SOURCE_VOLUME_DIR,
 		SubPath:   ".",
 	})
+
+	if len(cleaner.subPathStorage.GetAll()) == 0 {
+		log.Println("Skip pvc sub-path folder cleaner. All pvcs are clear.")
+		return nil
+	}
 
 	isPVCSubPathCleanerRunning = true
 	defer func() {
@@ -267,7 +273,7 @@ func (cleaner *PVCSubPathCleaner) getPVCSubPathToContentCleanUp(pipelineRuns *pi
 				break
 			}
 		}
-		if !isPresent {
+		if !isPresent && strings.HasPrefix(pvcSubPath.PVCSubPath, "pvc-") {
 			pvcToCleanUp = append(pvcToCleanUp, pvcSubPath)
 		}
 	}
