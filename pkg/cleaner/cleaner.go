@@ -75,8 +75,13 @@ func NewPVCSubPathCleaner(pipelineRunApi v1beta1.PipelineRunInterface, subPathSt
 func (cleaner *PVCSubPathCleaner) ScheduleCleanUpSubPathFoldersContent() {
 	for {
 		time.Sleep(CLEANUP_PVC_CONTENT_PERIOD)
-
 		log.Println("Schedule cleanup new subpath folders content")
+
+		if isPVCSubPathCleanerRunning {
+			log.Println("Skip pvc sub-path folder content cleaner, pvc sub-path folder cleaner is running.")
+			continue
+		}
+
 		if err := cleaner.cleanUpSubPathFoldersContent(); err != nil {
 			log.Print(err)
 		}
@@ -119,17 +124,22 @@ func (cleaner *PVCSubPathCleaner) CleanupSubFolders() error {
 func (cleaner *PVCSubPathCleaner) cleanUpSubPathFolders() error {
 	log.Println("Create new pvc sub-path folder cleaner pod")
 
+	pvcToCleanUp, err := cleaner.getPVCSubPathToCleanUp()
+	if err != nil {
+		return err
+	}
+
+	if len(pvcToCleanUp) == 0 {
+		log.Println("Skip pvc sub-path folder cleaner. All required folders were removed.")
+		return nil
+	}
+
 	var volumeMounts []corev1.VolumeMount
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
 		Name:      VOLUME_NAME,
 		MountPath: pkg.SOURCE_VOLUME_DIR,
 		SubPath:   ".",
 	})
-
-	if len(cleaner.subPathStorage.GetAll()) == 0 {
-		log.Println("Skip pvc sub-path folder cleaner. All pvcs are clear.")
-		return nil
-	}
 
 	isPVCSubPathCleanerRunning = true
 	defer func() {
@@ -139,40 +149,29 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFolders() error {
 	podName := "clean-pvc-folders-pod"
 	podImage := os.Getenv("PVC_POD_CLEANER_IMAGE")
 	pvcSubPathCleanerPod := cleaner.getPodCleaner(podName, podName, "/cleaner", volumeMounts, podImage)
-	_, err := cleaner.clientset.CoreV1().Pods(cleaner.namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
+	_, err = cleaner.clientset.CoreV1().Pods(cleaner.namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
 	if err != nil {
 		return err
 	}
 
 	log.Print("Remove pvc sub-path folder cleaner pod")
 
-	return cleaner.waitAndDeleteCleanUpPod(podName, "component="+podName, func(pvcSubpaths []*model.PVCSubPath) {}, []*model.PVCSubPath{})
+	return cleaner.waitAndDeleteCleanUpPod(podName, "component="+podName, cleaner.deletePVCFromStorage, pvcToCleanUp)
 }
 
 func (cleaner *PVCSubPathCleaner) cleanUpSubPathFoldersContent() error {
-	if isPVCSubPathCleanerRunning {
-		log.Println("Skip pvc sub-path folder content cleaner, pvc sub-path folder cleaner is running.")
-		return nil
-	}
-
-	pipelineRuns, err := cleaner.pipelineRunApi.List(context.TODO(), metav1.ListOptions{})
+	notEmptyPVCs, err := cleaner.getNotEmptyPVCs()
 	if err != nil {
 		return err
 	}
-
-	pvcToCleanUp, err := cleaner.getPVCSubPathToContentCleanUp(pipelineRuns)
-	if err != nil {
-		return err
-	}
-
-	if len(pvcToCleanUp) == 0 {
+	if len(notEmptyPVCs) == 0 {
 		log.Println("Nothing to cleanup")
 		return nil
 	}
 
 	var delFoldersContentCmd string
 	var volumeMounts []corev1.VolumeMount
-	for _, pvc := range pvcToCleanUp {
+	for _, pvc := range notEmptyPVCs {
 		pvcSubPath := filepath.Join(pkg.SOURCE_VOLUME_DIR, pvc.PVCSubPath)
 		delFoldersContentCmd += "cd " + pvcSubPath + "; ls -A | xargs rm -rfv;"
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
@@ -192,7 +191,7 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFoldersContent() error {
 
 	log.Println("Remove pvc sub-path folder content cleaner pod")
 
-	return cleaner.waitAndDeleteCleanUpPod(pvcSubPathCleanerPod.Name, "component=cleaner-pod", cleaner.deletePVCFromStorage, pvcToCleanUp)
+	return cleaner.waitAndDeleteCleanUpPod(pvcSubPathCleanerPod.Name, "component=cleaner-pod", cleaner.markCleanPVCContent, notEmptyPVCs)
 }
 
 func (cleaner *PVCSubPathCleaner) waitAndDeleteCleanUpPod(podName string, label string, onDelete func([]*model.PVCSubPath), subPaths []*model.PVCSubPath) error {
@@ -259,11 +258,41 @@ func (cleaner *PVCSubPathCleaner) deletePVCFromStorage(pvcSubPaths []*model.PVCS
 	}
 }
 
-func (cleaner *PVCSubPathCleaner) getPVCSubPathToContentCleanUp(pipelineRuns *pipelinev1.PipelineRunList) ([]*model.PVCSubPath, error) {
+func (cleaner *PVCSubPathCleaner) markCleanPVCContent(pvcSubPaths []*model.PVCSubPath) {
+	for _, pvcSubPath := range pvcSubPaths {
+		pvcSubPath.IsContentPruned = true
+		cleaner.subPathStorage.Update(pvcSubPath)
+	}
+}
+
+func (cleaner *PVCSubPathCleaner) getNotEmptyPVCs() ([]*model.PVCSubPath, error) {
+	notEmptyPVCs := []*model.PVCSubPath{}
+	pvcToCleanUp, err := cleaner.getPVCSubPathToCleanUp()
+	if err != nil {
+		return notEmptyPVCs, err
+	}
+
+	for _, pvcSubPath := range pvcToCleanUp {
+		if !pvcSubPath.IsContentPruned {
+			notEmptyPVCs = append(notEmptyPVCs, pvcSubPath)
+		}
+	}
+	return notEmptyPVCs, nil
+}
+
+func (cleaner *PVCSubPathCleaner) getPVCSubPathToCleanUp() ([]*model.PVCSubPath, error) {
 	subPaths := cleaner.subPathStorage.GetAll()
 	log.Printf("All pvc sub-path folders to filter: %d", len(subPaths))
-
 	pvcToCleanUp := []*model.PVCSubPath{}
+
+	if len(subPaths) == 0 {
+		return pvcToCleanUp, nil
+	}
+
+	pipelineRuns, err := cleaner.pipelineRunApi.List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return pvcToCleanUp, err
+	}
 
 	for _, pvcSubPath := range subPaths {
 		isPresent := false
@@ -273,7 +302,7 @@ func (cleaner *PVCSubPathCleaner) getPVCSubPathToContentCleanUp(pipelineRuns *pi
 				break
 			}
 		}
-		if !isPresent && strings.HasPrefix(pvcSubPath.PVCSubPath, "pvc-") {
+		if !isPresent && strings.HasPrefix(pvcSubPath.PVCSubPath, "pv-") {
 			pvcToCleanUp = append(pvcToCleanUp, pvcSubPath)
 		}
 	}

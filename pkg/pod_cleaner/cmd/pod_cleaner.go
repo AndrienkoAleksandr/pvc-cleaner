@@ -83,9 +83,6 @@ func main() {
 		for _, pipelinerun := range pipelineRuns.Items {
 			log.Printf("pipelinerun %s and pvc subpath folder name is %s", "pvc-"+pipelinerun.ObjectMeta.Name, pvcSubPath.Name())
 			if "pv-"+pipelinerun.ObjectMeta.Name == pvcSubPath.Name() {
-				if !pipelinerun.ObjectMeta.DeletionTimestamp.IsZero() {
-					log.Printf("!!!!!!!!!!!!!!!!!!!!! Timestamp = %s", pipelinerun.ObjectMeta.Name)
-				}
 				isPresent = true
 				break
 			}
@@ -102,11 +99,11 @@ func main() {
 	for _, pvc := range pvcsToCleanUp {
 		wg.Add(1)
 		log.Printf("Cleanup subpath %s", pvc.Name())
-		cleanUpSubpaths(pvc, &wg)
+		go cleanUpSubpaths(pvc, &wg)
 	}
 
 	log.Println("Wait cleanup....")
-	// wg.Wait()
+	wg.Wait()
 	log.Println("Done!!!!")
 }
 
@@ -125,7 +122,7 @@ func watchNewPipelineRuns(pipelineRunApi v1beta1.PipelineRunInterface) {
 			continue
 		}
 
-		log.Println("Ops... Stop pod....")
+		log.Println("Detected new running pipelinerun... Stop pod....")
 		// Stop appication, we shouldn't continue cleanup when new pipelinerun executed, because this
 		// new pipelinerun will fail on the pvc without support parallel read/write operation from different pods
 		os.Exit(0)
@@ -149,10 +146,4 @@ func cleanUpSubpaths(pvc fs.FileInfo, wg *sync.WaitGroup) {
 		log.Println(err.Error())
 		return
 	}
-
-	_, err = os.Stat(path)
-	if !os.IsNotExist(err) {
-		log.Fatal("============================ Total fail!!! File is still present!!!!")
-	}
-	log.Printf("Cleanup %s completed", path)
 }
