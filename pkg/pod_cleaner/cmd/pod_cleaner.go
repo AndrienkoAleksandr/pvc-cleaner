@@ -51,8 +51,6 @@ func main() {
 		log.Fatalf("failed to create pipeline clientset %s", err)
 	}
 
-	log.Println("Got namespace")
-
 	pipelineRunApi := tknClientset.TektonV1beta1().PipelineRuns(namespace)
 
 	log.Println("Watch new pipelineruns...")
@@ -62,19 +60,18 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("Amount pipelineruns is %d", len(pipelineRuns.Items))
 
+	log.Printf("Read %s folder...", pkg.SOURCE_VOLUME_DIR)
 	pvcSubPaths, err := ioutil.ReadDir(pkg.SOURCE_VOLUME_DIR)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("Amount pvc subpath %d", len(pvcSubPaths))
 
 	pvcsToCleanUp := []fs.FileInfo{}
 	for _, pvcSubPath := range pvcSubPaths {
 		log.Printf("Pvc sub-folder is %s ", pvcSubPath.Name())
 		if !pvcSubPath.IsDir() {
-			log.Println("=========Skip file")
+			log.Printf("Skip file %s", pvcSubPath.Name())
 			continue
 		}
 
@@ -88,8 +85,6 @@ func main() {
 		}
 		if !isPresent {
 			pvcsToCleanUp = append(pvcsToCleanUp, pvcSubPath)
-		} else {
-			log.Printf("!!! Skip %s ", pvcSubPath)
 		}
 	}
 
@@ -101,9 +96,9 @@ func main() {
 		go cleanUpSubpaths(pvc, &wg)
 	}
 
-	log.Println("Wait cleanup....")
+	log.Println("Wait cleanup all subpath folders....")
 	wg.Wait()
-	log.Println("Done!!!!")
+	log.Println("Done!")
 }
 
 func watchNewPipelineRuns(pipelineRunApi v1beta1.PipelineRunInterface) {
@@ -132,13 +127,12 @@ func cleanUpSubpaths(pvc fs.FileInfo, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	path := filepath.Join(pkg.SOURCE_VOLUME_DIR, pvc.Name())
-	log.Printf("Joined path is %s", path)
 	info, err := os.Stat(path)
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	log.Printf("Data folder size is %d", info.Size())
+	log.Printf("PVC subpath %s data size is %d", path, info.Size())
 
 	log.Printf("Remove pvc subpath: %s", path)
 	if err := os.RemoveAll(path); err != nil {

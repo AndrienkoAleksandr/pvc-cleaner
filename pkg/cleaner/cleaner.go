@@ -16,10 +16,8 @@
 package cleaner
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"time"
@@ -232,24 +230,6 @@ func (cleaner *PVCSubPathCleaner) waitAndDeleteCleanUpPod(podName string, label 
 	}
 	ticker.Stop()
 	watch.Stop()
-
-	req := cleaner.clientset.CoreV1().Pods(cleaner.namespace).GetLogs(podName, &corev1.PodLogOptions{})
-
-	podLogs, err := req.Stream(context.TODO())
-	if err != nil {
-		log.Fatal("error in opening stream")
-	}
-	defer podLogs.Close()
-
-	buf := new(bytes.Buffer)
-	_, err = io.Copy(buf, podLogs)
-	if err != nil {
-		log.Fatal("error in opening stream")
-	}
-	str := buf.String()
-	log.Println("------")
-	log.Print(str)
-	log.Println("------")
 
 	defer onDelete(subPaths)
 	return cleaner.clientset.CoreV1().Pods(cleaner.namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
