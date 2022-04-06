@@ -20,7 +20,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"io/fs"
@@ -87,7 +86,7 @@ func main() {
 				break
 			}
 		}
-		if !isPresent && strings.HasPrefix(pvcSubPath.Name(), "pv-") {
+		if !isPresent {
 			pvcsToCleanUp = append(pvcsToCleanUp, pvcSubPath)
 		} else {
 			log.Printf("!!! Skip %s ", pvcSubPath)

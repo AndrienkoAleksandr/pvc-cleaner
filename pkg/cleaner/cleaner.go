@@ -22,7 +22,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	"path/filepath"
@@ -39,6 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"sync"
 )
 
 const (
@@ -60,6 +60,8 @@ type PVCSubPathCleaner struct {
 	clientset      *kubernetes.Clientset
 	conf           *k8s.PVCCleanerConfig
 	namespace      string
+
+	delPVCFoldersMu sync.Mutex
 }
 
 func NewPVCSubPathCleaner(pipelineRunApi v1beta1.PipelineRunInterface, subPathStorage *storage.PVCSubPathsStorage, clientset *kubernetes.Clientset, conf *k8s.PVCCleanerConfig, namespace string) *PVCSubPathCleaner {
@@ -102,10 +104,13 @@ func (cleaner *PVCSubPathCleaner) AddNewPVC(pipelineRun *pipelinev1.PipelineRun)
 	}
 }
 
-func (cleaner *PVCSubPathCleaner) CleanupSubFolders() error {
+func (cleaner *PVCSubPathCleaner) CleanupSubFolders() {
+	cleaner.delPVCFoldersMu.Lock()
+	defer cleaner.delPVCFoldersMu.Unlock()
+
 	pipelineRuns, err := cleaner.pipelineRunApi.List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
-		return err
+		log.Println(err.Error())
 	}
 
 	if cleaner.isActivePipelineRunPresent(pipelineRuns) {
@@ -114,11 +119,9 @@ func (cleaner *PVCSubPathCleaner) CleanupSubFolders() error {
 		log.Println("Cleanup sub-path folders")
 
 		if err := cleaner.cleanUpSubPathFolders(); err != nil {
-			return err
+			log.Println(err.Error())
 		}
 	}
-
-	return nil
 }
 
 func (cleaner *PVCSubPathCleaner) cleanUpSubPathFolders() error {
@@ -302,7 +305,7 @@ func (cleaner *PVCSubPathCleaner) getPVCSubPathToCleanUp() ([]*model.PVCSubPath,
 				break
 			}
 		}
-		if !isPresent && strings.HasPrefix(pvcSubPath.PVCSubPath, "pv-") {
+		if !isPresent {
 			pvcToCleanUp = append(pvcToCleanUp, pvcSubPath)
 		}
 	}

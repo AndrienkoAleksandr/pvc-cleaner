@@ -98,10 +98,7 @@ func (controller *CleanupPVCController) Start() {
 
 		if event.Type == watchapi.Deleted {
 			log.Println(fmt.Sprintf("Event type: %v, pipelinerun: %s,amount workspaces: %d", event.Type, pipelineRun.ObjectMeta.Name, len(pipelineRun.Spec.Workspaces)))
-			if err := controller.onDeletePipelineRun(pipelineRun); err != nil {
-				log.Println(err)
-				continue
-			}
+			controller.onDeletePipelineRun(pipelineRun)
 		}
 	}
 }
@@ -138,14 +135,11 @@ func (controller *CleanupPVCController) onCreatePipelineRun(pipelineRun *pipelin
 	return nil
 }
 
-func (controller *CleanupPVCController) onDeletePipelineRun(pipelineRun *pipelinev1.PipelineRun) error {
+func (controller *CleanupPVCController) onDeletePipelineRun(pipelineRun *pipelinev1.PipelineRun) {
 	namespace := pipelineRun.ObjectMeta.Namespace
 	cleaner := controller.namespacedCleaners[namespace]
 	if cleaner == nil {
-		return nil
+		return
 	}
-	if err := cleaner.CleanupSubFolders(); err != nil {
-		return err
-	}
-	return nil
+	go cleaner.CleanupSubFolders()
 }
