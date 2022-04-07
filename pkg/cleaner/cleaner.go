@@ -17,7 +17,6 @@ package cleaner
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"time"
@@ -80,10 +79,10 @@ func (cleaner *PVCSubPathCleaner) ScheduleCleanUpSubPathFoldersContent() {
 	for {
 		select {
 		case <- ticker.C:
-			log.Printf("Schedule cleanup new subpath folders content for %s namespace", cleaner.namespace)
+			log.Printf("Schedule cleanup new subpath folders content for \"%s\" namespace", cleaner.namespace)
 
 			if isPVCSubPathCleanerRunning {
-				log.Printf("Skip pvc sub-path folder content cleaner, pvc sub-path folder cleaner is running in namespace %s.", cleaner.namespace)
+				log.Printf("Skip pvc sub-path folder content cleaner, pvc sub-path folder cleaner is running in namespace \"%s\".", cleaner.namespace)
 				continue
 			}
 	
@@ -91,14 +90,14 @@ func (cleaner *PVCSubPathCleaner) ScheduleCleanUpSubPathFoldersContent() {
 				log.Print(err)
 			}
 		case <- cleaner.Done:
-			log.Printf("PVC cleaner completed work for namespace %s", cleaner.namespace)
+			log.Printf("PVC cleaner completed work for namespace \"%s\"", cleaner.namespace)
 			return
 		}
 	}
 }
 
 func (cleaner *PVCSubPathCleaner) AddNewPVC(pipelineRun *pipelinev1.PipelineRun) {
-	log.Printf("Add new pipelineRun with name %s in namespace %s", pipelineRun.ObjectMeta.Name, cleaner.namespace)
+	log.Printf("Add new pipelineRun with name %s in namespace \"%s\"", pipelineRun.ObjectMeta.Name, cleaner.namespace)
 
 	for _, workspace := range pipelineRun.Spec.Workspaces {
 		if workspace.Name == pkg.SOURCE_WORKSPACE_NAME {
@@ -121,9 +120,9 @@ func (cleaner *PVCSubPathCleaner) CleanupSubFolders() {
 	}
 
 	if cleaner.isActivePipelineRunPresent(pipelineRuns) {
-		log.Printf("Stop, there are running pipelineruns in namespace %s", cleaner.namespace)
+		log.Printf("Stop, there are running pipelineruns in namespace \"%s\"", cleaner.namespace)
 	} else {
-		log.Printf("Cleanup sub-path folders in namespace %s", cleaner.namespace)
+		log.Printf("Cleanup sub-path folders in namespace \"%s\"", cleaner.namespace)
 
 		if err := cleaner.cleanUpSubPathFolders(); err != nil {
 			log.Println(err.Error())
@@ -132,7 +131,7 @@ func (cleaner *PVCSubPathCleaner) CleanupSubFolders() {
 }
 
 func (cleaner *PVCSubPathCleaner) cleanUpSubPathFolders() error {
-	log.Printf("Create new pvc sub-path folder cleaner pod in namespace %s", cleaner.namespace)
+	log.Printf("Create new pvc sub-path folder cleaner pod in namespace \"%s\"", cleaner.namespace)
 
 	pvcToCleanUp, err := cleaner.getPVCSubPathToCleanUp()
 	if err != nil {
@@ -164,7 +163,7 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFolders() error {
 		return err
 	}
 
-	log.Printf("Remove pvc sub-path folder cleaner pod in namespace %s", cleaner.namespace)
+	log.Printf("Remove pvc sub-path folder cleaner pod in namespace \"%s\"", cleaner.namespace)
 
 	return cleaner.waitAndDeleteCleanUpPod(podName, "component="+podName, cleaner.deletePVCFromStorage, pvcToCleanUp)
 }
@@ -175,7 +174,7 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFoldersContent() error {
 		return err
 	}
 	if len(notEmptyPVCs) == 0 {
-		log.Printf("Nothing to cleanup. Folders content was removed. Namespace %s", cleaner.namespace)
+		log.Printf("Nothing to cleanup. Folders content was removed. namespace \"%s\"", cleaner.namespace)
 		return nil
 	}
 
@@ -191,7 +190,7 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFoldersContent() error {
 		})
 	}
 
-	log.Printf("Create new pvc sub-path folder content cleaner pod in namespace %s", cleaner.namespace)
+	log.Printf("Create new pvc sub-path folder content cleaner pod in namespace \"%s\"", cleaner.namespace)
 
 	pvcSubPathCleanerPod := cleaner.getPodCleaner("clean-pvc-sub-path-content-pod", "cleaner-pod", delFoldersContentCmd, volumeMounts, "registry.access.redhat.com/ubi8/ubi")
 	_, err = cleaner.clientset.CoreV1().Pods(cleaner.namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
@@ -199,7 +198,7 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFoldersContent() error {
 		return err
 	}
 
-	log.Printf("Remove pvc sub-path folder content cleaner pod in namespace %s", cleaner.namespace)
+	log.Printf("Remove pvc sub-path folder content cleaner pod in namespace \"%s\"", cleaner.namespace)
 
 	return cleaner.waitAndDeleteCleanUpPod(pvcSubPathCleanerPod.Name, "component=cleaner-pod", cleaner.markCleanPVCContent, notEmptyPVCs)
 }
@@ -224,7 +223,7 @@ func (cleaner *PVCSubPathCleaner) waitAndDeleteCleanUpPod(podName string, label 
 				cleanUpDone <- true
 			}
 			if p.Status.Phase == corev1.PodFailed {
-				log.Printf("Pod cleaner failed in namespace %s. Reason: %s. Error message: %s.", cleaner.namespace, p.Status.Reason, p.Status.Message)
+				log.Printf("Pod cleaner failed in namespace \"%s\". Reason: %s. Error message: %s.", cleaner.namespace, p.Status.Reason, p.Status.Message)
 				cleanUpDone <- false
 			}
 		}
@@ -233,9 +232,9 @@ func (cleaner *PVCSubPathCleaner) waitAndDeleteCleanUpPod(podName string, label 
 	ticker := time.NewTicker(CLEANUP_TIMEOUT)
 	select {
 	case <-cleanUpDone:
-		fmt.Printf("[INFO] Pod cleaner finished successfully in namespace %s", cleaner.namespace)
+		log.Printf("[INFO] Pod cleaner finished successfully in namespace \"%s\"", cleaner.namespace)
 	case <-ticker.C:
-		fmt.Printf("[WARN] Remove pod cleaner due timeout in namespace %s", cleaner.namespace)
+		log.Printf("[WARN] Remove pod cleaner due timeout in namespace \"%s\"", cleaner.namespace)
 	}
 	ticker.Stop()
 	watch.Stop()
@@ -274,7 +273,7 @@ func (cleaner *PVCSubPathCleaner) getNotEmptyPVCs() ([]*model.PVCSubPath, error)
 
 func (cleaner *PVCSubPathCleaner) getPVCSubPathToCleanUp() ([]*model.PVCSubPath, error) {
 	subPaths := cleaner.subPathStorage.GetAll()
-	log.Printf("All pvc sub-path folders to filter: %d in namespace %s", len(subPaths), cleaner.namespace)
+	log.Printf("All pvc sub-path folders to filter: %d in namespace \"%s\"", len(subPaths), cleaner.namespace)
 	pvcToCleanUp := []*model.PVCSubPath{}
 
 	if len(subPaths) == 0 {
