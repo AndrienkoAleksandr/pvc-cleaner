@@ -357,7 +357,7 @@ func (cleaner *PVCSubPathCleaner) getRolebinding() *rbacv1.RoleBinding {
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
+			Kind:     "ClusterRole",
 			Name:     PVC_CLEANER_POD_CLUSTER_ROLE,
 		},
 	}
