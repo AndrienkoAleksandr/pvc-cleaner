@@ -134,7 +134,7 @@ func (controller *CleanupPVCController) onCreatePipelineRun(pipelineRun *pipelin
 		controller.namespacedCleaners[namespace] = pvcCleaner
 	}
 
-	log.Printf("Add new pvc for pipelinerun %s and namespace %s", pipelineRun.ObjectMeta.Name, pipelineRun.ObjectMeta.Namespace)
+	log.Printf("Add new pvc for pipelinerun %s in namespace %s", pipelineRun.ObjectMeta.Name, pipelineRun.ObjectMeta.Namespace)
 	pvcCleaner.AddNewPVC(pipelineRun)
 
 	return nil
