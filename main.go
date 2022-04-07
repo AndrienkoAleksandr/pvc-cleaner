@@ -45,7 +45,7 @@ func main() {
 
 	namespace, err := k8s.GetNamespace()
 	if err != nil {
-		log.Fatalf("failed to create pipeline clientset %s", err)
+		log.Fatalf("failed to get application namespace %s", err)
 	}
 	cleanerConf := k8s.NewCleanerConfig(clientset, namespace)
 	cleanerConf.CreateIfNotPresent()

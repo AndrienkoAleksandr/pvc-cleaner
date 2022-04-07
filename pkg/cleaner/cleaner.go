@@ -45,14 +45,16 @@ const (
 
 	VOLUME_NAME = "source"
 
-	CLEANER_POD_ROLE            = "pod-cleaner-role"
-	CLEANER_POD_ROLEBINDING     = "pod-cleaner-rolebinding"
-	CLEANER_POD_SERVICE_ACCOUNT = "pod-cleaner-service-account"
+	PVC_CLEANER_POD_CLUSTER_ROLE    = "pvc-cleaner-pod-cluster-role"
+	PVC_CLEANER_POD_ROLEBINDING     = "pvc-cleaner-pod-rolebinding"
+	PVC_CLEANER_POD_SERVICE_ACCOUNT = "pvc-cleaner-pod-service-account"
 )
 
 var isPVCSubPathCleanerRunning = false
 
 type PVCSubPathCleaner struct {
+	Done chan bool
+
 	pipelineRunApi v1beta1.PipelineRunInterface
 	subPathStorage *storage.PVCSubPathsStorage
 	clientset      *kubernetes.Clientset
@@ -69,21 +71,28 @@ func NewPVCSubPathCleaner(pipelineRunApi v1beta1.PipelineRunInterface, subPathSt
 		clientset:      clientset,
 		conf:           conf,
 		namespace:      namespace,
+		Done:           make(chan bool),
 	}
 }
 
 func (cleaner *PVCSubPathCleaner) ScheduleCleanUpSubPathFoldersContent() {
+	ticker := time.NewTicker(CLEANUP_PVC_CONTENT_PERIOD)
 	for {
-		time.Sleep(CLEANUP_PVC_CONTENT_PERIOD)
-		log.Println("Schedule cleanup new subpath folders content")
+		select {
+		case <- ticker.C:
+			log.Println("Schedule cleanup new subpath folders content")
 
-		if isPVCSubPathCleanerRunning {
-			log.Println("Skip pvc sub-path folder content cleaner, pvc sub-path folder cleaner is running.")
-			continue
-		}
-
-		if err := cleaner.cleanUpSubPathFoldersContent(); err != nil {
-			log.Print(err)
+			if isPVCSubPathCleanerRunning {
+				log.Println("Skip pvc sub-path folder content cleaner, pvc sub-path folder cleaner is running.")
+				continue
+			}
+	
+			if err := cleaner.cleanUpSubPathFoldersContent(); err != nil {
+				log.Print(err)
+			}
+		case <- cleaner.Done:
+			log.Printf("PVC cleaner completed work for namespace %s", cleaner.namespace)
+			return
 		}
 	}
 }
@@ -306,7 +315,7 @@ func (cleaner *PVCSubPathCleaner) ProvidePodCleanerPermissions() error {
 	// create service account if not exists
 	corev1api := cleaner.clientset.CoreV1()
 
-	_, err := corev1api.ServiceAccounts(cleaner.namespace).Get(context.TODO(), CLEANER_POD_SERVICE_ACCOUNT, metav1.GetOptions{})
+	_, err := corev1api.ServiceAccounts(cleaner.namespace).Get(context.TODO(), PVC_CLEANER_POD_SERVICE_ACCOUNT, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			if _, err = corev1api.ServiceAccounts(cleaner.namespace).Create(context.TODO(), cleaner.getServiceAccount(), metav1.CreateOptions{}); err != nil {
@@ -319,20 +328,8 @@ func (cleaner *PVCSubPathCleaner) ProvidePodCleanerPermissions() error {
 
 	rbacApi := cleaner.clientset.RbacV1()
 
-	// create role if not exists
-	_, err = rbacApi.Roles(cleaner.namespace).Get(context.TODO(), CLEANER_POD_ROLE, metav1.GetOptions{})
-	if err != nil {
-		if errors.IsNotFound(err) {
-			if _, err = rbacApi.Roles(cleaner.namespace).Create(context.TODO(), cleaner.getRole(), metav1.CreateOptions{}); err != nil {
-				return err
-			}
-		} else {
-			return err
-		}
-	}
-
 	// create rolebinding if not exists
-	_, err = rbacApi.RoleBindings(cleaner.namespace).Get(context.TODO(), CLEANER_POD_ROLEBINDING, metav1.GetOptions{})
+	_, err = rbacApi.RoleBindings(cleaner.namespace).Get(context.TODO(), PVC_CLEANER_POD_ROLEBINDING, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			if _, err = rbacApi.RoleBindings(cleaner.namespace).Create(context.TODO(), cleaner.getRolebinding(), metav1.CreateOptions{}); err != nil {
@@ -346,38 +343,22 @@ func (cleaner *PVCSubPathCleaner) ProvidePodCleanerPermissions() error {
 	return nil
 }
 
-func (cleaner *PVCSubPathCleaner) getRole() *rbacv1.Role {
-	return &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      CLEANER_POD_ROLE,
-			Namespace: cleaner.namespace,
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{"tekton.dev"},
-				Resources: []string{"pipelineruns", "pipelineruns/status"},
-				Verbs:     []string{"get", "list", "watch"},
-			},
-		},
-	}
-}
-
 func (cleaner *PVCSubPathCleaner) getRolebinding() *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      CLEANER_POD_ROLEBINDING,
+			Name:      PVC_CLEANER_POD_ROLEBINDING,
 			Namespace: cleaner.namespace,
 		},
 		Subjects: []rbacv1.Subject{
 			{
 				Kind: "ServiceAccount",
-				Name: CLEANER_POD_SERVICE_ACCOUNT,
+				Name: PVC_CLEANER_POD_SERVICE_ACCOUNT,
 			},
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "Role",
-			Name:     CLEANER_POD_ROLE,
+			Name:     PVC_CLEANER_POD_CLUSTER_ROLE,
 		},
 	}
 }
@@ -385,7 +366,7 @@ func (cleaner *PVCSubPathCleaner) getRolebinding() *rbacv1.RoleBinding {
 func (cleaner *PVCSubPathCleaner) getServiceAccount() *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      CLEANER_POD_SERVICE_ACCOUNT,
+			Name:      PVC_CLEANER_POD_SERVICE_ACCOUNT,
 			Namespace: cleaner.namespace,
 		},
 	}
@@ -401,7 +382,7 @@ func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFo
 			Labels: labels,
 		},
 		Spec: corev1.PodSpec{
-			ServiceAccountName:    CLEANER_POD_SERVICE_ACCOUNT,
+			ServiceAccountName:    PVC_CLEANER_POD_SERVICE_ACCOUNT,
 			RestartPolicy:         "Never",
 			ActiveDeadlineSeconds: &deadline,
 			Containers: []corev1.Container{

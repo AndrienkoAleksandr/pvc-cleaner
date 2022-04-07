@@ -1,0 +1,15 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pvc-pod-cleaner-cluster-role
+rules:
+- apiGroups:
+    - tekton.dev
+  resources:
+    - pipelineruns
+    - pipelineruns/status
+  verbs:
+    - get
+    - watch
+    - list

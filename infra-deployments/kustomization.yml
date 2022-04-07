@@ -6,7 +6,8 @@ namespace: pvc-cleaner
 resources:
   - namespace.yaml
   - service-account.yaml
-  - cluster-role.yaml
-  - cluster-rolebinding.yaml
+  - pvc-cleaner-cluster-role.yaml
+  - pvc-cleaner-cluster-rolebinding.yaml
+  - pvc-cleaner-pod-cluster-role.yaml
   - deployment.yaml
   - service.yaml
