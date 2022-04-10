@@ -20,12 +20,12 @@ import (
 	"log"
 
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/cleaner"
+	"github.com/redhat-appstudio/pvc-cleaner/pkg"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/k8s"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/storage"
 	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	v1beta1 "github.com/tektoncd/pipeline/pkg/client/clientset/versioned/typed/pipeline/v1beta1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	watchapi "k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
@@ -145,27 +145,17 @@ func (controller *CleanupPVCController) onDeletePipelineRun(namespaceName string
 	if cleaner == nil {
 		return nil
 	}
-	namespace, err := controller.clientset.CoreV1().Namespaces().Get(context.TODO(), namespaceName, metav1.GetOptions{})
+
+	namespaceInDeletionState, err := pkg.IsNamespaceInDeletingState(controller.clientset, namespaceName);
 	if err != nil {
-		if errors.IsNotFound(err) {
-			controller.stopCleaner(namespaceName)
-			return nil
-		}
 		return err
 	}
-
-	if !namespace.ObjectMeta.DeletionTimestamp.IsZero() {
-		controller.stopCleaner(namespaceName)
+	if namespaceInDeletionState {
+		delete(controller.namespacedCleaners, namespaceName)
 		return nil
 	}
 
 	go cleaner.CleanupSubFolders()
 
 	return nil
-}
-
-func (controller *CleanupPVCController) stopCleaner(namespace string) {
-	cleaner := controller.namespacedCleaners[namespace]
-	cleaner.Done <- true
-	delete(controller.namespacedCleaners, namespace)
 }

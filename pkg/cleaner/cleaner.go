@@ -54,8 +54,6 @@ const (
 var isPVCSubPathCleanerRunning = false
 
 type PVCSubPathCleaner struct {
-	Done chan bool
-
 	pipelineRunApi v1beta1.PipelineRunInterface
 	subPathStorage *storage.PVCSubPathsStorage
 	clientset      *kubernetes.Clientset
@@ -72,39 +70,42 @@ func NewPVCSubPathCleaner(pipelineRunApi v1beta1.PipelineRunInterface, subPathSt
 		clientset:      clientset,
 		conf:           conf,
 		namespace:      namespace,
-		Done:           make(chan bool),
 	}
 }
 
 func (cleaner *PVCSubPathCleaner) ScheduleCleanUpSubPathFoldersContent() {
 	ticker := time.NewTicker(CLEANUP_PVC_CONTENT_PERIOD)
 	for {
-		select {
-		case <-ticker.C:
-			log.Printf("Schedule cleanup new subpath folders content for \"%s\" namespace", cleaner.namespace)
+		<- ticker.C
+		log.Printf("Schedule cleanup new subpath folders content for \"%s\" namespace", cleaner.namespace)
 
-			isPVCPresent, err := cleaner.isPVCPresent()
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-
-			if !isPVCPresent {
-				log.Printf("Skip pvc sub-path folder content cleaner, PVC claim %s not found for namespace %s", DEFAULT_PVC_CLAIM_NAME, cleaner.namespace)
-				continue
-			}
-
-			if isPVCSubPathCleanerRunning {
-				log.Printf("Skip pvc sub-path folder content cleaner, pvc sub-path folder cleaner is running in namespace \"%s\".", cleaner.namespace)
-				continue
-			}
-
-			if err := cleaner.cleanUpSubPathFoldersContent(); err != nil {
-				log.Print(err)
-			}
-		case <-cleaner.Done:
+		isNamespaceInDeletingState, err := pkg.IsNamespaceInDeletingState(cleaner.clientset, cleaner.namespace)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		if isNamespaceInDeletingState {
 			log.Printf("PVC cleaner completed work for namespace \"%s\"", cleaner.namespace)
-			return
+			break
+		}
+
+		isPVCPresent, err := cleaner.isPVCPresent()
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		if !isPVCPresent {
+			log.Printf("Skip pvc sub-path folder content cleaner, PVC claim %s not found for namespace %s", DEFAULT_PVC_CLAIM_NAME, cleaner.namespace)
+			continue
+		}
+
+		if isPVCSubPathCleanerRunning {
+			log.Printf("Skip pvc sub-path folder content cleaner, pvc sub-path folder cleaner is running in namespace \"%s\".", cleaner.namespace)
+			continue
+		}
+
+		if err := cleaner.cleanUpSubPathFoldersContent(); err != nil {
+			log.Print(err)
 		}
 	}
 }

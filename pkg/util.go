@@ -16,12 +16,16 @@
 package pkg
 
 import (
+	"context"
 	"flag"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/homedir"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var (
@@ -45,4 +49,19 @@ func GetClusterConfigPath() string {
 func IsOutSideClusterConfig() bool {
 	isOutSideClusterConfig := os.Getenv("OUTSIDE_CLUSTER")
 	return strings.ToLower(isOutSideClusterConfig) == "true"
+}
+
+func IsNamespaceInDeletingState(clientset *kubernetes.Clientset, namespaceName string) (bool, error) {
+	namespace, err := clientset.CoreV1().Namespaces().Get(context.TODO(), namespaceName, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return true, nil
+		}
+		return false, err
+	}
+
+	if !namespace.ObjectMeta.DeletionTimestamp.IsZero() {
+		return true, nil
+	}
+	return false, nil
 }
