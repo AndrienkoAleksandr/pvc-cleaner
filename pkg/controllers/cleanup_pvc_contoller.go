@@ -154,7 +154,7 @@ func (controller *CleanupPVCController) onDeletePipelineRun(namespaceName string
 		return err
 	}
 
-	if !namespace.ObjectMeta.DeletionTimestamp.IsZero()  {
+	if !namespace.ObjectMeta.DeletionTimestamp.IsZero() {
 		controller.stopCleaner(namespaceName)
 		return nil
 	}

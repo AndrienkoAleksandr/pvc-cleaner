@@ -47,6 +47,8 @@ const (
 	PVC_CLEANER_POD_CLUSTER_ROLE    = "pvc-cleaner-pod-cluster-role"
 	PVC_CLEANER_POD_ROLEBINDING     = "pvc-cleaner-pod-rolebinding"
 	PVC_CLEANER_POD_SERVICE_ACCOUNT = "pvc-cleaner-pod-service-account"
+
+	DEFAULT_PVC_CLAIM_NAME = "app-studio-default-workspace"
 )
 
 var isPVCSubPathCleanerRunning = false
@@ -78,18 +80,29 @@ func (cleaner *PVCSubPathCleaner) ScheduleCleanUpSubPathFoldersContent() {
 	ticker := time.NewTicker(CLEANUP_PVC_CONTENT_PERIOD)
 	for {
 		select {
-		case <- ticker.C:
+		case <-ticker.C:
 			log.Printf("Schedule cleanup new subpath folders content for \"%s\" namespace", cleaner.namespace)
+
+			isPVCPresent, err := cleaner.isPVCPresent()
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+
+			if !isPVCPresent {
+				log.Printf("Skip pvc sub-path folder content cleaner, PVC claim %s not found for namespace %s", DEFAULT_PVC_CLAIM_NAME, cleaner.namespace)
+				continue
+			}
 
 			if isPVCSubPathCleanerRunning {
 				log.Printf("Skip pvc sub-path folder content cleaner, pvc sub-path folder cleaner is running in namespace \"%s\".", cleaner.namespace)
 				continue
 			}
-	
+
 			if err := cleaner.cleanUpSubPathFoldersContent(); err != nil {
 				log.Print(err)
 			}
-		case <- cleaner.Done:
+		case <-cleaner.Done:
 			log.Printf("PVC cleaner completed work for namespace \"%s\"", cleaner.namespace)
 			return
 		}
@@ -113,6 +126,17 @@ func (cleaner *PVCSubPathCleaner) AddNewPVC(pipelineRun *pipelinev1.PipelineRun)
 func (cleaner *PVCSubPathCleaner) CleanupSubFolders() {
 	cleaner.delPVCFoldersMu.Lock()
 	defer cleaner.delPVCFoldersMu.Unlock()
+
+	isPVCPresent, err := cleaner.isPVCPresent()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	if !isPVCPresent {
+		log.Printf("Skip pvc sub-path folder cleaner, PVC claim %s not found for namespace %s", DEFAULT_PVC_CLAIM_NAME, cleaner.namespace)
+		return
+	}
 
 	pipelineRuns, err := cleaner.pipelineRunApi.List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
@@ -412,4 +436,14 @@ func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFo
 			},
 		},
 	}
+}
+
+func (cleaner *PVCSubPathCleaner) isPVCPresent() (bool, error) {
+	if _, err := cleaner.clientset.CoreV1().PersistentVolumeClaims(cleaner.namespace).Get(context.TODO(), DEFAULT_PVC_CLAIM_NAME, metav1.GetOptions{}); err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
