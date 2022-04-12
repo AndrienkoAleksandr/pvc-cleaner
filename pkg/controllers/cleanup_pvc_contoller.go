@@ -19,14 +19,15 @@ import (
 	"context"
 	"log"
 
-	"github.com/redhat-appstudio/pvc-cleaner/pkg/cleaner"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg"
+	"github.com/redhat-appstudio/pvc-cleaner/pkg/cleaner"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/k8s"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/storage"
 	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	v1beta1 "github.com/tektoncd/pipeline/pkg/client/clientset/versioned/typed/pipeline/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	watchapi "k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
@@ -91,6 +92,9 @@ func (controller *CleanupPVCController) Start() {
 		}
 
 		if event.Type == watchapi.Added {
+			if err := controller.addFinalizer(pipelineRun); err != nil {
+				log.Println(err)
+			}
 			log.Println(fmt.Sprintf("Event type: %v, pipelinerun: %s,amount workspaces: %d", event.Type, pipelineRun.ObjectMeta.Name, len(pipelineRun.Spec.Workspaces)))
 			if err := controller.onCreatePipelineRun(pipelineRun); err != nil {
 				log.Println(err)
@@ -156,6 +160,19 @@ func (controller *CleanupPVCController) onDeletePipelineRun(namespaceName string
 	}
 
 	go cleaner.CleanupSubFolders()
+
+	return nil
+}
+
+func (cc *CleanupPVCController) addFinalizer(pipelineRun *pipelinev1.PipelineRun) error {
+	api := cc.tknClientset.TektonV1beta1().PipelineRuns(pipelineRun.GetNamespace())
+
+	patchTemplate := `{"metadata": {"finalizers": ["%s"]}}`
+	patch := fmt.Sprintf(patchTemplate, pkg.PIPELINERUN_FINALIZER_NAME)
+
+	if _, err := api.Patch(context.TODO(), pipelineRun.GetName(), types.MergePatchType, []byte(patch), metav1.PatchOptions{}); err != nil {
+		return err
+	}
 
 	return nil
 }

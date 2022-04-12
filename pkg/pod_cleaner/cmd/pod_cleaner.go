@@ -17,21 +17,17 @@ package main
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
-	"path/filepath"
 	"sync"
-
-	"io/fs"
 	"log"
 
 	"github.com/redhat-appstudio/pvc-cleaner/pkg"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/k8s"
-	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned/typed/pipeline/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	watchapi "k8s.io/apimachinery/pkg/watch"
+	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 )
 
 func main() {
@@ -61,39 +57,30 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Printf("Read %s folder...", pkg.SOURCE_VOLUME_DIR)
-	pvcSubPaths, err := ioutil.ReadDir(pkg.SOURCE_VOLUME_DIR)
-	if err != nil {
-		log.Fatal(err)
-	}
+	var wg sync.WaitGroup
+	for _, pipelinerun := range pipelineRuns.Items {
+		if !pipelinerun.DeletionTimestamp.IsZero() {
+			wg.Add(1)
 
-	pvcsToCleanUp := []fs.FileInfo{}
-	for _, pvcSubPath := range pvcSubPaths {
-		log.Printf("Pvc sub-folder is %s ", pvcSubPath.Name())
-		if !pvcSubPath.IsDir() {
-			log.Printf("Skip file %s", pvcSubPath.Name())
-			continue
-		}
+			var pvcSubPath string
+			for _, workspace := range pipelinerun.Spec.Workspaces {
+				if workspace.Name == "workspace" {
+					pvcSubPath = workspace.SubPath
+				}
+			}
 
-		isPresent := false
-		for _, pipelinerun := range pipelineRuns.Items {
-			log.Printf("pipelinerun %s and pvc subpath folder name is %s", "pvc-"+pipelinerun.ObjectMeta.Name, pvcSubPath.Name())
-			if "pv-"+pipelinerun.ObjectMeta.Name == pvcSubPath.Name() {
-				isPresent = true
+			if pvcSubPath == "" {
+				log.Printf("Skip pvc cleanup. Coresponding workspace was not found.")
 				break
 			}
-		}
-		if !isPresent {
-			pvcsToCleanUp = append(pvcsToCleanUp, pvcSubPath)
-		}
-	}
 
-	var wg sync.WaitGroup
-	// Remove pvc subfolders in parallel.
-	for _, pvc := range pvcsToCleanUp {
-		wg.Add(1)
-		log.Printf("Cleanup subpath %s", pvc.Name())
-		go cleanUpSubpaths(pvc, &wg)
+			log.Printf("Cleanup subpath %s for pipelinerun %s", pvcSubPath, pipelinerun.Name)
+			go func (pvcSubPath string, wg *sync.WaitGroup, pipelineRun pipelinev1.PipelineRun, pipelineRunApi v1beta1.PipelineRunInterface) {
+				cleanUpSubpaths(pvcSubPath, wg)
+				removePipelineRunFinalizer(pipelinerun, pipelineRunApi)
+			}(pvcSubPath, &wg, pipelinerun, pipelineRunApi)
+			break
+		}
 	}
 
 	log.Println("Wait cleanup all subpath folders....")
@@ -123,20 +110,34 @@ func watchNewPipelineRuns(pipelineRunApi v1beta1.PipelineRunInterface) {
 	}
 }
 
-func cleanUpSubpaths(pvc fs.FileInfo, wg *sync.WaitGroup) {
+func cleanUpSubpaths(pvcSubPath string, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	path := filepath.Join(pkg.SOURCE_VOLUME_DIR, pvc.Name())
-	info, err := os.Stat(path)
+	info, err := os.Stat(pvcSubPath)
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	log.Printf("PVC subpath %s data size is %d", path, info.Size())
+	log.Printf("PVC subpath %s data size is %d", pvcSubPath, info.Size())
 
-	log.Printf("Remove pvc subpath: %s", path)
-	if err := os.RemoveAll(path); err != nil {
+	log.Printf("Remove pvc subpath: %s", pvcSubPath)
+	if err := os.RemoveAll(pvcSubPath); err != nil {
 		log.Println(err.Error())
 		return
+	}
+}
+
+func removePipelineRunFinalizer(pipelineRun pipelinev1.PipelineRun, pipelineRunApi v1beta1.PipelineRunInterface) {
+	var index int
+	for i, finalizer := range pipelineRun.ObjectMeta.Finalizers {
+		if finalizer == pkg.PIPELINERUN_FINALIZER_NAME {
+			index = i
+			break
+		}
+	}
+	pipelineRun.ObjectMeta.Finalizers = append(pipelineRun.ObjectMeta.Finalizers[:index], pipelineRun.ObjectMeta.Finalizers[index+1:]...)
+	log.Printf("Finalizers are %v", pipelineRun.ObjectMeta.Finalizers)
+	if _, err := pipelineRunApi.Update(context.TODO(), &pipelineRun, metav1.UpdateOptions{}); err != nil {
+		log.Println(err.Error())
 	}
 }

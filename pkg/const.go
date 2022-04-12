@@ -18,4 +18,6 @@ package pkg
 const (
 	SOURCE_VOLUME_DIR     = "/workspace/source"
 	SOURCE_WORKSPACE_NAME = "workspace"
+
+	PIPELINERUN_FINALIZER_NAME = "pvc-cleaner"
 )
