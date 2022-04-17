@@ -28,6 +28,8 @@ import (
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/model"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/storage"
 
+	"sync"
+
 	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned/typed/pipeline/v1beta1"
 	corev1 "k8s.io/api/core/v1"
@@ -35,7 +37,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"sync"
 )
 
 const (
@@ -76,7 +77,7 @@ func NewPVCSubPathCleaner(pipelineRunApi v1beta1.PipelineRunInterface, subPathSt
 func (cleaner *PVCSubPathCleaner) ScheduleCleanUpSubPathFoldersContent() {
 	ticker := time.NewTicker(CLEANUP_PVC_CONTENT_PERIOD)
 	for {
-		<- ticker.C
+		<-ticker.C
 		log.Printf("Schedule cleanup new subpath folders content for \"%s\" namespace", cleaner.namespace)
 
 		isNamespaceInDeletingState, err := pkg.IsNamespaceInDeletingState(cleaner.clientset, cleaner.namespace)
@@ -311,15 +312,11 @@ func (cleaner *PVCSubPathCleaner) getPVCSubPathToCleanUp() ([]*model.PVCSubPath,
 	}
 
 	for _, pvcSubPath := range subPaths {
-		isPresent := false
 		for _, pipelinerun := range pipelineRuns.Items {
-			if pipelinerun.ObjectMeta.Name == pvcSubPath.PipelineRun {
-				isPresent = true
+			if pipelinerun.ObjectMeta.Name == pvcSubPath.PipelineRun && !pipelinerun.DeletionTimestamp.IsZero() {
+				pvcToCleanUp = append(pvcToCleanUp, pvcSubPath)
 				break
 			}
-		}
-		if !isPresent {
-			pvcToCleanUp = append(pvcToCleanUp, pvcSubPath)
 		}
 	}
 
@@ -328,7 +325,8 @@ func (cleaner *PVCSubPathCleaner) getPVCSubPathToCleanUp() ([]*model.PVCSubPath,
 
 func (cleaner *PVCSubPathCleaner) isActivePipelineRunPresent(pipelineRuns *pipelinev1.PipelineRunList) bool {
 	for _, pipelineRun := range pipelineRuns.Items {
-		if len(pipelineRun.Status.Conditions) == 0 || pipelineRun.Status.Conditions[0].Reason == "Running" {
+		if len(pipelineRun.Status.Conditions) == 0 ||
+			(pipelineRun.Status.Conditions[0].Reason == "Running" && pipelineRun.DeletionTimestamp.IsZero()) {
 			return true
 		}
 	}

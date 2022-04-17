@@ -65,7 +65,7 @@ func (controller *CleanupPVCController) Start() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("Resource version for watch add operation is %s", resourceVersion)
+	log.Printf("Resource version for watch operations is %s", resourceVersion)
 
 	// Watcher will be closed after some timeout, so we need to re-create watcher https://github.com/kubernetes/client-go/issues/623.
 	// Let's use "NewRetryWatcher" helper for this purpose.
@@ -83,6 +83,7 @@ func (controller *CleanupPVCController) Start() {
 	for {
 		event, ok := <-retryWatcher.ResultChan()
 		if !ok {
+			log.Printf("Something went wrong with watcher...")
 			return
 		}
 
@@ -102,7 +103,7 @@ func (controller *CleanupPVCController) Start() {
 			}
 		}
 
-		if event.Type == watchapi.Deleted {
+		if event.Type == watchapi.Modified && !pipelineRun.DeletionTimestamp.IsZero() {
 			log.Println(fmt.Sprintf("Event type: %v, pipelinerun: %s,amount workspaces: %d", event.Type, pipelineRun.ObjectMeta.Name, len(pipelineRun.Spec.Workspaces)))
 			if err := controller.onDeletePipelineRun(pipelineRun.ObjectMeta.Namespace); err != nil {
 				log.Println(err)
@@ -150,7 +151,7 @@ func (controller *CleanupPVCController) onDeletePipelineRun(namespaceName string
 		return nil
 	}
 
-	namespaceInDeletionState, err := pkg.IsNamespaceInDeletingState(controller.clientset, namespaceName);
+	namespaceInDeletionState, err := pkg.IsNamespaceInDeletingState(controller.clientset, namespaceName)
 	if err != nil {
 		return err
 	}
