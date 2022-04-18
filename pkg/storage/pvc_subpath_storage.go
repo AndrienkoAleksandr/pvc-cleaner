@@ -37,6 +37,13 @@ func (paths *PVCSubPathsStorage) AddPVCSubPath(path *model.PVCSubPath) {
 	paths.subPathCache[path.PipelineRun] = path
 }
 
+func (paths *PVCSubPathsStorage) Update(path *model.PVCSubPath) {
+	paths.mu.Lock()
+	defer paths.mu.Unlock()
+
+	paths.subPathCache[path.PipelineRun] = path
+}
+
 func (paths *PVCSubPathsStorage) Delete(pipelinerun string) {
 	paths.mu.Lock()
 	defer paths.mu.Unlock()

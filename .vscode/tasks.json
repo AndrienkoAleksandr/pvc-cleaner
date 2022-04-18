@@ -3,7 +3,7 @@
     "tasks": [
         {
             "label": "Build image",
-            "command": "docker build -t quay.io/redhat-appstudio/pvc-cleaner .",
+            "command": "docker build -t quay.io/${QUAY_USERNAME}/pvc-cleaner .",
             "type": "shell",
             "args": [],
             "presentation": {
@@ -13,7 +13,7 @@
         },
         {
             "label": "Push image",
-            "command": "docker push quay.io/redhat-appstudio/pvc-cleaner",
+            "command": "docker push quay.io/${QUAY_USERNAME}/pvc-cleaner",
             "type": "shell",
             "args": [],
             "presentation": {
@@ -23,7 +23,7 @@
         },
         {
             "label": "Build pod cleaner image",
-            "command": "docker build -t quay.io/redhat-appstudio/pvc-pod-cleaner -f cleaner_pod.Dockerfile .",
+            "command": "docker build -t quay.io/${QUAY_USERNAME}/pvc-pod-cleaner -f cleaner_pod.Dockerfile .",
             "type": "shell",
             "args": [],
             "presentation": {
@@ -33,7 +33,7 @@
         },
         {
             "label": "Push pod cleaner image",
-            "command": "docker push quay.io/redhat-appstudio/pvc-pod-cleaner",
+            "command": "docker push quay.io/${QUAY_USERNAME}/pvc-pod-cleaner",
             "type": "shell",
             "args": [],
             "presentation": {

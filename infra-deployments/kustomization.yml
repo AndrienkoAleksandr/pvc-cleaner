@@ -1,10 +1,12 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: default
+namespace: pvc-cleaner
 
 resources:
   - service-account.yaml
-  - rolebinding.yaml
+  - pvc-cleaner-cluster-role.yaml
+  - pvc-cleaner-cluster-rolebinding.yaml
+  - pvc-cleaner-pod-cluster-role.yaml
   - deployment.yaml
   - service.yaml
