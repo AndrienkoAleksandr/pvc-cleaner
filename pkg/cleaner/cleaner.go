@@ -24,7 +24,6 @@ import (
 	"path/filepath"
 
 	"github.com/redhat-appstudio/pvc-cleaner/pkg"
-	"github.com/redhat-appstudio/pvc-cleaner/pkg/k8s"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/model"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/storage"
 
@@ -58,18 +57,16 @@ type PVCSubPathCleaner struct {
 	pipelineRunApi v1beta1.PipelineRunInterface
 	subPathStorage *storage.PVCSubPathsStorage
 	clientset      *kubernetes.Clientset
-	conf           *k8s.PVCCleanerConfig
 	namespace      string
 
 	delPVCFoldersMu sync.Mutex
 }
 
-func NewPVCSubPathCleaner(pipelineRunApi v1beta1.PipelineRunInterface, subPathStorage *storage.PVCSubPathsStorage, clientset *kubernetes.Clientset, conf *k8s.PVCCleanerConfig, namespace string) *PVCSubPathCleaner {
+func NewPVCSubPathCleaner(pipelineRunApi v1beta1.PipelineRunInterface, subPathStorage *storage.PVCSubPathsStorage, clientset *kubernetes.Clientset, namespace string) *PVCSubPathCleaner {
 	return &PVCSubPathCleaner{
 		pipelineRunApi: pipelineRunApi,
 		subPathStorage: subPathStorage,
 		clientset:      clientset,
-		conf:           conf,
 		namespace:      namespace,
 	}
 }

@@ -21,7 +21,6 @@ import (
 
 	"github.com/redhat-appstudio/pvc-cleaner/pkg"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/cleaner"
-	"github.com/redhat-appstudio/pvc-cleaner/pkg/k8s"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/storage"
 	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
@@ -38,7 +37,6 @@ import (
 type CleanupPVCController struct {
 	// pipelineRunApi with "all-namespaces" scope
 	pipelineRunApi v1beta1.PipelineRunInterface
-	conf           *k8s.PVCCleanerConfig
 	clientset      *kubernetes.Clientset
 	tknClientset   *versioned.Clientset
 
@@ -47,12 +45,10 @@ type CleanupPVCController struct {
 
 func NewCleanupPVCController(
 	pipelineRunApi v1beta1.PipelineRunInterface,
-	conf *k8s.PVCCleanerConfig,
 	clientset *kubernetes.Clientset,
 	tknClientset *versioned.Clientset) *CleanupPVCController {
 	return &CleanupPVCController{
 		pipelineRunApi:     pipelineRunApi,
-		conf:               conf,
 		clientset:          clientset,
 		tknClientset:       tknClientset,
 		namespacedCleaners: make(map[string]*cleaner.PVCSubPathCleaner),
@@ -60,15 +56,9 @@ func NewCleanupPVCController(
 }
 
 func (controller *CleanupPVCController) Start() {
-	resourceVersion, err := controller.conf.GetWatchResourceVersion()
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("Resource version for watch operations is %s", resourceVersion)
-
 	// Watcher will be closed after some timeout, so we need to re-create watcher https://github.com/kubernetes/client-go/issues/623.
 	// Let's use "NewRetryWatcher" helper for this purpose.
-	retryWatcher, err := watchTool.NewRetryWatcher(resourceVersion, &cache.ListWatch{
+	retryWatcher, err := watchTool.NewRetryWatcher("1", &cache.ListWatch{
 		WatchFunc: func() func(options metav1.ListOptions) (watchapi.Interface, error) {
 			return func(options metav1.ListOptions) (watchapi.Interface, error) {
 				return controller.pipelineRunApi.Watch(context.TODO(), metav1.ListOptions{})
@@ -110,11 +100,6 @@ func (controller *CleanupPVCController) Start() {
 }
 
 func (controller *CleanupPVCController) onCreatePipelineRun(pipelineRun *pipelinev1.PipelineRun) error {
-	// Update initial  pipelinerun resource version to prevent send old "add" events after application pod restart.
-	if err := controller.conf.UpdateWatchResourceVersion(pipelineRun.ObjectMeta.ResourceVersion); err != nil {
-		return err
-	}
-
 	namespace := pipelineRun.ObjectMeta.Namespace
 	pvcCleaner := controller.namespacedCleaners[namespace]
 	if pvcCleaner == nil {
@@ -125,7 +110,6 @@ func (controller *CleanupPVCController) onCreatePipelineRun(pipelineRun *pipelin
 			pipelineRunApi,
 			storage.NewPVCSubPathsStorage(),
 			controller.clientset,
-			k8s.NewCleanerConfig(controller.clientset, namespace),
 			namespace,
 		)
 		if err := pvcCleaner.ProvidePodCleanerPermissions(); err != nil {

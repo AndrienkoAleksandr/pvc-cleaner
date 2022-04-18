@@ -43,18 +43,11 @@ func main() {
 		log.Fatalf("failed to create pipeline clientset %s", err)
 	}
 
-	namespace, err := k8s.GetNamespace()
-	if err != nil {
-		log.Fatalf("failed to get application namespace %s", err)
-	}
-	cleanerConf := k8s.NewCleanerConfig(clientset, namespace)
-	cleanerConf.CreateIfNotPresent()
 	// Create pipelineRunApi with "all-namespaces" mode
 	pipelinesRunApi := tknClientset.TektonV1beta1().PipelineRuns("")
 
 	pvcCleanupController := controllers.NewCleanupPVCController(
 		pipelinesRunApi,
-		cleanerConf,
 		clientset,
 		tknClientset,
 	)
