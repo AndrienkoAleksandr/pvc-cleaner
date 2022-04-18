@@ -19,8 +19,8 @@ import (
 	"context"
 	"log"
 
-	"github.com/redhat-appstudio/pvc-cleaner/pkg/cleaner"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg"
+	"github.com/redhat-appstudio/pvc-cleaner/pkg/cleaner"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/k8s"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/storage"
 	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
@@ -64,7 +64,7 @@ func (controller *CleanupPVCController) Start() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("Resource version for watch add operation is %s", resourceVersion)
+	log.Printf("Resource version for watch operations is %s", resourceVersion)
 
 	// Watcher will be closed after some timeout, so we need to re-create watcher https://github.com/kubernetes/client-go/issues/623.
 	// Let's use "NewRetryWatcher" helper for this purpose.
@@ -82,6 +82,7 @@ func (controller *CleanupPVCController) Start() {
 	for {
 		event, ok := <-retryWatcher.ResultChan()
 		if !ok {
+			log.Printf("Something went wrong with watcher...")
 			return
 		}
 
@@ -146,7 +147,7 @@ func (controller *CleanupPVCController) onDeletePipelineRun(namespaceName string
 		return nil
 	}
 
-	namespaceInDeletionState, err := pkg.IsNamespaceInDeletingState(controller.clientset, namespaceName);
+	namespaceInDeletionState, err := pkg.IsNamespaceInDeletingState(controller.clientset, namespaceName)
 	if err != nil {
 		return err
 	}
