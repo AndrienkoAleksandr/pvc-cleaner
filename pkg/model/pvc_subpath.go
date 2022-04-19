@@ -16,6 +16,7 @@
 package model
 
 type PVCSubPath struct {
-	PipelineRun string
-	PVCSubPath  string
+	PipelineRun     string
+	PVCSubPath      string
+	IsContentPruned bool
 }

@@ -16,14 +16,15 @@
 package main
 
 import (
+	"log"
+
 	"github.com/gin-gonic/gin"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg"
-	"github.com/redhat-appstudio/pvc-cleaner/pkg/cleaner"
+	"github.com/redhat-appstudio/pvc-cleaner/pkg/controllers"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/k8s"
-	"github.com/redhat-appstudio/pvc-cleaner/pkg/storage"
+
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
 	"k8s.io/client-go/kubernetes"
-	"log"
 )
 
 func main() {
@@ -42,21 +43,15 @@ func main() {
 		log.Fatalf("failed to create pipeline clientset %s", err)
 	}
 
-	namespace, err := k8s.GetNamespace()
-	if err != nil {
-		log.Fatalf("failed to create pipeline clientset %s", err)
-	}
+	// Create pipelineRunApi with "all-namespaces" mode
+	pipelinesRunApi := tknClientset.TektonV1beta1().PipelineRuns("")
 
-	pipelinesRunApi := tknClientset.TektonV1beta1().PipelineRuns(namespace)
-	subPathStorage := storage.NewPVCSubPathsStorage()
-	cleanerConf := k8s.NewCleanerConfig(clientset, namespace)
-	cleanerConf.CreateIfNotPresent()
-
-	pvc_cleaner := cleaner.NewPVCSubPathCleaner(pipelinesRunApi, subPathStorage, clientset, cleanerConf, namespace)
-	// cleanup pvc periodically
-	go pvc_cleaner.WatchNewPipelineRuns(subPathStorage)
-	go pvc_cleaner.ScheduleCleanUpSubPathFoldersContent()
-	go pvc_cleaner.WatchAndCleanUpSubPathFolders()
+	pvcCleanupController := controllers.NewCleanupPVCController(
+		pipelinesRunApi,
+		clientset,
+		tknClientset,
+	)
+	go pvcCleanupController.Start()
 
 	r := gin.Default()
 

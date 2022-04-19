@@ -32,7 +32,7 @@ const (
 func GetNamespace() (string, error) {
 	debug := os.Getenv("DEBUG")
 	if debug == "true" {
-		return "default", nil
+		return "pvc-cleaner", nil
 	}
 	if len(namespace) == 0 {
 		namespaceBytes, err := ioutil.ReadFile(namespaceFile)
