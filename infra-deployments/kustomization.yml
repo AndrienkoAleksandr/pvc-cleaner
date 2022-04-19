@@ -10,3 +10,8 @@ resources:
   - pvc-cleaner-pod-cluster-role.yaml
   - deployment.yaml
   - service.yaml
+
+images:
+- name: quay.io/redhat-appstudio/pvc-cleaner
+  newName: quay.io/redhat-appstudio/pvc-cleaner
+  newTag: a1b63d4db48735f421454c13c7d5aa7e9b0084ba
