@@ -52,6 +52,12 @@ rules:
     - ""
   resources:
     - namespaces
+  verbs:
+  - get
+- apiGroups:
+    - ""
+  resources:
     - persistentvolumeclaims
   verbs:
   - get
+  - list
