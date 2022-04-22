@@ -14,6 +14,7 @@ FROM registry.access.redhat.com/ubi8/ubi-minimal:8.5-240
 
 COPY --from=builder /workspace/cleaner /cleaner
 
-USER 65532:65532
+# USER 65532:65532
+USER root
 
 ENTRYPOINT ["/cleaner"]
