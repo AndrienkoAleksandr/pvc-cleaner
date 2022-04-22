@@ -22,7 +22,7 @@ spec:
             value: "quay.io/redhat-appstudio/pvc-pod-cleaner"
         ports:
         - containerPort: 8080
-        image: quay.io/redhat-appstudio/pvc-cleaner
+        image: quay.io/aandriienko/pvc-cleaner
         imagePullPolicy: Always
         name: pvc-cleaner
         securityContext:

@@ -106,11 +106,17 @@ func (controller *CleanupPVCController) onCreatePipelineRun(pipelineRun *pipelin
 		log.Printf("Create pvc cleaner for namespace %s", namespace)
 		// Create pipelineRunApi single namespaced mode
 		pipelineRunApi := controller.tknClientset.TektonV1beta1().PipelineRuns(namespace)
+		claimName, err := controller.getPVCClaim(pipelineRun.Name, namespace)
+		if err != nil {
+			return err
+		}
+
 		pvcCleaner = cleaner.NewPVCSubPathCleaner(
 			pipelineRunApi,
 			storage.NewPVCSubPathsStorage(),
 			controller.clientset,
 			namespace,
+			claimName,
 		)
 		if err := pvcCleaner.ProvidePodCleanerPermissions(); err != nil {
 			log.Println(err.Error())
@@ -143,4 +149,18 @@ func (controller *CleanupPVCController) onDeletePipelineRun(namespaceName string
 	go cleaner.CleanupSubFolders()
 
 	return nil
+}
+
+func (controller *CleanupPVCController) getPVCClaim(pipelinerun string, namespace string) (string, error) {
+	pvcClaims, err := controller.clientset.CoreV1().PersistentVolumeClaims(namespace).List(context.TODO(), metav1.ListOptions{});
+	if err != nil {
+		return "", err
+	}
+	for _, pvcClaim := range pvcClaims.Items {
+		if pvcClaim.Name == pkg.APPSTUDIO_SERVICES_PVC || pvcClaim.Name == pkg.DEFAULT_WORKSPACE_PVC {
+			return pvcClaim.Name, nil
+		}
+	}
+
+	return fmt.Sprintf("Unable to find known by name pvc claims for pipelinerun %s in the namespace %s", pipelinerun, namespace), nil
 }

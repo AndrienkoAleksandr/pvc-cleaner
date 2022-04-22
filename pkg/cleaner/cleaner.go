@@ -58,16 +58,18 @@ type PVCSubPathCleaner struct {
 	subPathStorage *storage.PVCSubPathsStorage
 	clientset      *kubernetes.Clientset
 	namespace      string
+	pvcClaimName   string
 
 	delPVCFoldersMu sync.Mutex
 }
 
-func NewPVCSubPathCleaner(pipelineRunApi v1beta1.PipelineRunInterface, subPathStorage *storage.PVCSubPathsStorage, clientset *kubernetes.Clientset, namespace string) *PVCSubPathCleaner {
+func NewPVCSubPathCleaner(pipelineRunApi v1beta1.PipelineRunInterface, subPathStorage *storage.PVCSubPathsStorage, clientset *kubernetes.Clientset, namespace string, pvcClaimName string) *PVCSubPathCleaner {
 	return &PVCSubPathCleaner{
 		pipelineRunApi: pipelineRunApi,
 		subPathStorage: subPathStorage,
 		clientset:      clientset,
 		namespace:      namespace,
+		pvcClaimName:   pvcClaimName,
 	}
 }
 
@@ -433,7 +435,7 @@ func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFo
 					Name: VOLUME_NAME,
 					VolumeSource: corev1.VolumeSource{
 						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-							ClaimName: "app-studio-default-workspace",
+							ClaimName: cleaner.pvcClaimName,
 						},
 					},
 				},
@@ -443,7 +445,7 @@ func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFo
 }
 
 func (cleaner *PVCSubPathCleaner) isPVCPresent() (bool, error) {
-	if _, err := cleaner.clientset.CoreV1().PersistentVolumeClaims(cleaner.namespace).Get(context.TODO(), DEFAULT_PVC_CLAIM_NAME, metav1.GetOptions{}); err != nil {
+	if _, err := cleaner.clientset.CoreV1().PersistentVolumeClaims(cleaner.namespace).Get(context.TODO(), cleaner.pvcClaimName, metav1.GetOptions{}); err != nil {
 		if errors.IsNotFound(err) {
 			return false, nil
 		}

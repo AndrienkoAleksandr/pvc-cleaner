@@ -18,4 +18,7 @@ package pkg
 const (
 	SOURCE_VOLUME_DIR     = "/workspace/source"
 	SOURCE_WORKSPACE_NAME = "workspace"
+
+	DEFAULT_WORKSPACE_PVC  = "app-studio-default-workspace"
+	APPSTUDIO_SERVICES_PVC = "appstudio"
 )
