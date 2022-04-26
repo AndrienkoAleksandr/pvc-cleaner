@@ -16,14 +16,10 @@
 package cleaner
 
 import (
-	// "bytes"
 	"context"
-	// "io"
 	"log"
 	"os"
 	"time"
-
-	// "path/filepath"
 
 	"github.com/redhat-appstudio/pvc-cleaner/pkg"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/model"
@@ -174,14 +170,14 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFolders() error {
 		}
 	}
 
-	if (isAppServicePVCPresent) {
+	if isAppServicePVCPresent {
 		if err := cleaner.getPVCOrDie(pkg.APPSTUDIO_SERVICES_PVC); err != nil {
 			return nil
 		}
 		volumes = append(volumes, getVolume(pkg.APPSTUDIO_SERVICES_PVC))
 		volumeMounts = append(volumeMounts, getVolumeMount(pkg.APPSTUDIO_SERVICES_PVC))
 	}
-	if (isDefWorkspacePVCPresent) {
+	if isDefWorkspacePVCPresent {
 		if err := cleaner.getPVCOrDie(pkg.DEFAULT_WORKSPACE_PVC); err != nil {
 			return nil
 		}
@@ -238,13 +234,13 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFoldersContent() error {
 		})
 	}
 
-	if (isAppServicePVCPresent) {
+	if isAppServicePVCPresent {
 		if err := cleaner.getPVCOrDie(pkg.APPSTUDIO_SERVICES_PVC); err != nil {
 			return nil
 		}
 		volumes = append(volumes, getVolume(pkg.APPSTUDIO_SERVICES_PVC))
 	}
-	if (isDefWorkspacePVCPresent) {
+	if isDefWorkspacePVCPresent {
 		if err := cleaner.getPVCOrDie(pkg.DEFAULT_WORKSPACE_PVC); err != nil {
 			return nil
 		}
@@ -299,24 +295,6 @@ func (cleaner *PVCSubPathCleaner) waitAndDeleteCleanUpPod(podName string, label 
 	}
 	ticker.Stop()
 	watch.Stop()
-
-	// req := cleaner.clientset.CoreV1().Pods(cleaner.namespace).GetLogs(podName, &corev1.PodLogOptions{})
-
-	// podLogs, err := req.Stream(context.TODO())
-	// if err != nil {
-	// log.Fatal("error in opening stream")
-	// }
-	// defer podLogs.Close()
-
-	// buf := new(bytes.Buffer)
-	// _, err = io.Copy(buf, podLogs)
-	// if err != nil {
-	// log.Fatal("error in opening stream")
-	// }
-	// str := buf.String()
-	// log.Println("------")
-	// log.Print(str)
-	// log.Println("------")
 
 	defer onDelete(subPaths)
 	return cleaner.clientset.CoreV1().Pods(cleaner.namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})

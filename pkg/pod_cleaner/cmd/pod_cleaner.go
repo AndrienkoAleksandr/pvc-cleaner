@@ -19,7 +19,6 @@ import (
 	"context"
 	"log"
 	"os"
-	// "path/filepath"
 	"sync"
 
 	"flag"
@@ -112,7 +111,6 @@ func watchNewPipelineRuns(pipelineRunApi v1beta1.PipelineRunInterface, resourceV
 func cleanUpSubpaths(pvcSubPath string, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	// path := filepath.Join(pkg.SOURCE_VOLUME_DIR, pvcSubPath)
 	info, err := os.Stat(pvcSubPath)
 	if err != nil {
 		log.Println(err)
