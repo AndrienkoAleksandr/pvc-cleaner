@@ -18,5 +18,6 @@ package model
 type PVCSubPath struct {
 	PipelineRun     string
 	PVCSubPath      string
+	PVCClaimName    string
 	IsContentPruned bool
 }
