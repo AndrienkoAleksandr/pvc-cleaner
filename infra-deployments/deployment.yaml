@@ -19,10 +19,10 @@ spec:
         - /pvc-cleaner
         env:
           - name: "PVC_POD_CLEANER_IMAGE"
-            value: "quay.io/aandriienko/pvc-pod-cleaner"
+            value: "quay.io/redhat-appstudio/pvc-pod-cleaner"
         ports:
         - containerPort: 8080
-        image: quay.io/aandriienko/pvc-cleaner
+        image: quay.io/redhat-appstudio/pvc-cleaner
         imagePullPolicy: Always
         name: pvc-cleaner
         securityContext:
