@@ -82,7 +82,7 @@ func (controller *CleanupPVCController) Start() {
 		}
 
 		if event.Type == watchapi.Added {
-			log.Println(fmt.Sprintf("Event type: %v, pipelinerun: %s,amount workspaces: %d", event.Type, pipelineRun.ObjectMeta.Name, len(pipelineRun.Spec.Workspaces)))
+			log.Println(fmt.Sprintf("Event type: %v, pipelinerun: %s, amount workspaces: %d", event.Type, pipelineRun.ObjectMeta.Name, len(pipelineRun.Spec.Workspaces)))
 			if err := controller.onCreatePipelineRun(pipelineRun); err != nil {
 				log.Println(err)
 				continue
@@ -90,7 +90,7 @@ func (controller *CleanupPVCController) Start() {
 		}
 
 		if event.Type == watchapi.Deleted {
-			log.Println(fmt.Sprintf("Event type: %v, pipelinerun: %s,amount workspaces: %d", event.Type, pipelineRun.ObjectMeta.Name, len(pipelineRun.Spec.Workspaces)))
+			log.Println(fmt.Sprintf("Event type: %v, pipelinerun: %s, amount workspaces: %d", event.Type, pipelineRun.ObjectMeta.Name, len(pipelineRun.Spec.Workspaces)))
 			if err := controller.onDeletePipelineRun(pipelineRun.ObjectMeta.Namespace); err != nil {
 				log.Println(err)
 				continue
