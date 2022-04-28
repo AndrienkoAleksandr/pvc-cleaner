@@ -21,8 +21,6 @@ import (
 	"os"
 	"time"
 
-	"path/filepath"
-
 	"github.com/redhat-appstudio/pvc-cleaner/pkg"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/model"
 	"github.com/redhat-appstudio/pvc-cleaner/pkg/storage"
@@ -41,8 +39,6 @@ import (
 const (
 	CLEANUP_PVC_CONTENT_PERIOD = 3 * time.Minute
 	CLEANUP_TIMEOUT            = 10 * time.Minute
-
-	VOLUME_NAME = "source"
 
 	PVC_CLEANER_POD_CLUSTER_ROLE    = "pvc-cleaner-pod-cluster-role"
 	PVC_CLEANER_POD_ROLEBINDING     = "pvc-cleaner-pod-rolebinding"
@@ -87,16 +83,6 @@ func (cleaner *PVCSubPathCleaner) ScheduleCleanUpSubPathFoldersContent() {
 			break
 		}
 
-		isPVCPresent, err := cleaner.isPVCPresent()
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		if !isPVCPresent {
-			log.Printf("Skip pvc sub-path folder content cleaner, PVC claim %s not found for namespace %s", DEFAULT_PVC_CLAIM_NAME, cleaner.namespace)
-			continue
-		}
-
 		if isPVCSubPathCleanerRunning {
 			log.Printf("Skip pvc sub-path folder content cleaner, pvc sub-path folder cleaner is running in namespace \"%s\".", cleaner.namespace)
 			continue
@@ -113,8 +99,22 @@ func (cleaner *PVCSubPathCleaner) AddNewPVC(pipelineRun *pipelinev1.PipelineRun)
 
 	for _, workspace := range pipelineRun.Spec.Workspaces {
 		if workspace.Name == pkg.SOURCE_WORKSPACE_NAME {
+			if workspace.PersistentVolumeClaim == nil {
+				log.Printf("Skip to track pipelinerun %s. PVC claim was not defined in the pipelinerun", pipelineRun.Name)
+				return
+			}
+			claimName := workspace.PersistentVolumeClaim.ClaimName
+			if claimName != pkg.APPSTUDIO_SERVICES_PVC && claimName != pkg.DEFAULT_WORKSPACE_PVC {
+				log.Printf("Skip to track pipelinerun %s. Unknown PVC claim name %s. Supported values are: %s,%s", pipelineRun.Name, claimName, pkg.APPSTUDIO_SERVICES_PVC, pkg.DEFAULT_WORKSPACE_PVC)
+				return
+			}
 			if workspace.SubPath != "" {
-				pvcSubPath := &model.PVCSubPath{PipelineRun: pipelineRun.ObjectMeta.Name, PVCSubPath: workspace.SubPath}
+				pvcSubPath := &model.PVCSubPath{
+					PipelineRun:  pipelineRun.ObjectMeta.Name,
+					PVCSubPath:   workspace.SubPath,
+					PVCClaimName: claimName,
+				}
+				log.Printf("Add pvc %+v", pvcSubPath)
 				cleaner.subPathStorage.AddPVCSubPath(pvcSubPath)
 			}
 			break
@@ -125,17 +125,6 @@ func (cleaner *PVCSubPathCleaner) AddNewPVC(pipelineRun *pipelinev1.PipelineRun)
 func (cleaner *PVCSubPathCleaner) CleanupSubFolders() {
 	cleaner.delPVCFoldersMu.Lock()
 	defer cleaner.delPVCFoldersMu.Unlock()
-
-	isPVCPresent, err := cleaner.isPVCPresent()
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	if !isPVCPresent {
-		log.Printf("Skip pvc sub-path folder cleaner, PVC claim %s not found for namespace %s", DEFAULT_PVC_CLAIM_NAME, cleaner.namespace)
-		return
-	}
 
 	pipelineRuns, err := cleaner.pipelineRunApi.List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
@@ -166,15 +155,34 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFolders() error {
 		return nil
 	}
 
-	var volumeMounts []corev1.VolumeMount
-	volumeMounts = append(volumeMounts, corev1.VolumeMount{
-		Name:      VOLUME_NAME,
-		MountPath: pkg.SOURCE_VOLUME_DIR,
-		SubPath:   ".",
-	})
 	command := "/cleaner"
+	volumeMounts := []corev1.VolumeMount{}
+	volumes := []corev1.Volume{}
+	var isAppServicePVCPresent, isDefWorkspacePVCPresent bool
 	for _, pvcToCleanUp := range pvcToCleanUps {
-		command += " --pvc-subpaths=" + pvcToCleanUp.PVCSubPath
+		command += " --pvc-subpaths=" + "/" + pvcToCleanUp.PVCClaimName + "/" + pvcToCleanUp.PVCSubPath
+
+		if pvcToCleanUp.PVCClaimName == pkg.APPSTUDIO_SERVICES_PVC {
+			isAppServicePVCPresent = true
+		}
+		if pvcToCleanUp.PVCClaimName == pkg.DEFAULT_WORKSPACE_PVC {
+			isDefWorkspacePVCPresent = true
+		}
+	}
+
+	if isAppServicePVCPresent {
+		if err := cleaner.getPVCOrDie(pkg.APPSTUDIO_SERVICES_PVC); err != nil {
+			return nil
+		}
+		volumes = append(volumes, getVolume(pkg.APPSTUDIO_SERVICES_PVC))
+		volumeMounts = append(volumeMounts, getVolumeMount(pkg.APPSTUDIO_SERVICES_PVC))
+	}
+	if isDefWorkspacePVCPresent {
+		if err := cleaner.getPVCOrDie(pkg.DEFAULT_WORKSPACE_PVC); err != nil {
+			return nil
+		}
+		volumes = append(volumes, getVolume(pkg.DEFAULT_WORKSPACE_PVC))
+		volumeMounts = append(volumeMounts, getVolumeMount(pkg.DEFAULT_WORKSPACE_PVC))
 	}
 
 	isPVCSubPathCleanerRunning = true
@@ -184,7 +192,7 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFolders() error {
 
 	podName := "clean-pvc-folders-pod"
 	podImage := os.Getenv("PVC_POD_CLEANER_IMAGE")
-	pvcSubPathCleanerPod := cleaner.getPodCleaner(podName, podName, command, volumeMounts, podImage)
+	pvcSubPathCleanerPod := cleaner.getPodCleaner(podName, podName, command, volumes, volumeMounts, podImage)
 	_, err = cleaner.clientset.CoreV1().Pods(cleaner.namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
 	if err != nil {
 		return err
@@ -207,19 +215,41 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFoldersContent() error {
 
 	var delFoldersContentCmd string
 	var volumeMounts []corev1.VolumeMount
+	var volumes []corev1.Volume
+	var isAppServicePVCPresent, isDefWorkspacePVCPresent bool
 	for _, pvc := range notEmptyPVCs {
-		pvcSubPath := filepath.Join(pkg.SOURCE_VOLUME_DIR, pvc.PVCSubPath)
-		delFoldersContentCmd += "cd " + pvcSubPath + "; ls -A | xargs rm -rfv;"
+		subPath := "/" + pvc.PVCClaimName + "/" + pvc.PVCSubPath
+		delFoldersContentCmd += " cd " + subPath + " && ls -A | xargs rm -rfv || true;"
+
+		if pvc.PVCClaimName == pkg.APPSTUDIO_SERVICES_PVC {
+			isAppServicePVCPresent = true
+		}
+		if pvc.PVCClaimName == pkg.DEFAULT_WORKSPACE_PVC {
+			isDefWorkspacePVCPresent = true
+		}
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      VOLUME_NAME,
-			MountPath: pvcSubPath,
+			Name:      pvc.PVCClaimName,
+			MountPath: subPath,
 			SubPath:   pvc.PVCSubPath,
 		})
 	}
 
+	if isAppServicePVCPresent {
+		if err := cleaner.getPVCOrDie(pkg.APPSTUDIO_SERVICES_PVC); err != nil {
+			return nil
+		}
+		volumes = append(volumes, getVolume(pkg.APPSTUDIO_SERVICES_PVC))
+	}
+	if isDefWorkspacePVCPresent {
+		if err := cleaner.getPVCOrDie(pkg.DEFAULT_WORKSPACE_PVC); err != nil {
+			return nil
+		}
+		volumes = append(volumes, getVolume(pkg.DEFAULT_WORKSPACE_PVC))
+	}
+
 	log.Printf("Create new pvc sub-path folder content cleaner pod in namespace \"%s\"", cleaner.namespace)
 
-	pvcSubPathCleanerPod := cleaner.getPodCleaner("clean-pvc-sub-path-content-pod", "cleaner-pod", delFoldersContentCmd, volumeMounts, "registry.access.redhat.com/ubi8/ubi")
+	pvcSubPathCleanerPod := cleaner.getPodCleaner("clean-pvc-sub-path-content-pod", "cleaner-pod", delFoldersContentCmd, volumes, volumeMounts, "registry.access.redhat.com/ubi8/ubi")
 	_, err = cleaner.clientset.CoreV1().Pods(cleaner.namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
 	if err != nil {
 		return err
@@ -399,7 +429,7 @@ func (cleaner *PVCSubPathCleaner) getServiceAccount() *corev1.ServiceAccount {
 	}
 }
 
-func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFoldersContentCmd string, volumeMounts []corev1.VolumeMount, image string) *corev1.Pod {
+func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFoldersContentCmd string, volumes []corev1.Volume, volumeMounts []corev1.VolumeMount, image string) *corev1.Pod {
 	deadline := int64(5400)
 	labels := make(map[string]string)
 	labels["component"] = label
@@ -428,26 +458,33 @@ func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFo
 					WorkingDir:   "/",
 				},
 			},
-			Volumes: []corev1.Volume{
-				{
-					Name: VOLUME_NAME,
-					VolumeSource: corev1.VolumeSource{
-						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-							ClaimName: "app-studio-default-workspace",
-						},
-					},
-				},
+			Volumes: volumes,
+		},
+	}
+}
+
+func (cleaner *PVCSubPathCleaner) getPVCOrDie(pvcClaim string) error {
+	if _, err := cleaner.clientset.CoreV1().PersistentVolumeClaims(cleaner.namespace).Get(context.TODO(), pvcClaim, metav1.GetOptions{}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func getVolume(pvcClaimName string) corev1.Volume {
+	return corev1.Volume{
+		Name: pvcClaimName,
+		VolumeSource: corev1.VolumeSource{
+			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+				ClaimName: pvcClaimName,
 			},
 		},
 	}
 }
 
-func (cleaner *PVCSubPathCleaner) isPVCPresent() (bool, error) {
-	if _, err := cleaner.clientset.CoreV1().PersistentVolumeClaims(cleaner.namespace).Get(context.TODO(), DEFAULT_PVC_CLAIM_NAME, metav1.GetOptions{}); err != nil {
-		if errors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, err
+func getVolumeMount(pvcClaimName string) corev1.VolumeMount {
+	return corev1.VolumeMount{
+		Name:      pvcClaimName,
+		MountPath: "/" + pvcClaimName,
+		SubPath:   ".",
 	}
-	return true, nil
 }
