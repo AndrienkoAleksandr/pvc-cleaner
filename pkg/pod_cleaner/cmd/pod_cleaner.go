@@ -79,7 +79,7 @@ func main() {
 		go cleanUpSubpaths(pvcSubPath, &wg)
 	}
 
-	log.Println("Wait cleanup all subpath folders....")
+	log.Println("Wait cleanup all subpath folders...")
 	wg.Wait()
 	log.Println("Done!")
 }
