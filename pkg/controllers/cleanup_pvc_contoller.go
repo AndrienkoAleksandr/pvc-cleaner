@@ -109,7 +109,8 @@ func (controller *CleanupPVCController) onCreatePipelineRun(pipelineRun *pipelin
 		pvcCleaner = cleaner.NewPVCSubPathCleaner(
 			pipelineRunApi,
 			storage.NewPVCSubPathsStorage(),
-			controller.clientset,
+			controller.clientset.CoreV1(),
+			controller.clientset.RbacV1(),
 			namespace,
 		)
 		if err := pvcCleaner.ProvidePodCleanerPermissions(); err != nil {
@@ -131,7 +132,7 @@ func (controller *CleanupPVCController) onDeletePipelineRun(namespaceName string
 		return nil
 	}
 
-	namespaceInDeletionState, err := pkg.IsNamespaceInDeletingState(controller.clientset, namespaceName)
+	namespaceInDeletionState, err := pkg.IsNamespaceInDeletingState(controller.clientset.CoreV1(), namespaceName)
 	if err != nil {
 		return err
 	}
