@@ -33,7 +33,8 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
+	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	typedrbacv1 "k8s.io/client-go/kubernetes/typed/rbac/v1"
 )
 
 const (
@@ -52,17 +53,24 @@ var isPVCSubPathCleanerRunning = false
 type PVCSubPathCleaner struct {
 	pipelineRunApi v1beta1.PipelineRunInterface
 	subPathStorage *storage.PVCSubPathsStorage
-	clientset      *kubernetes.Clientset
+	corev1         v1.CoreV1Interface
+	rbacv1         typedrbacv1.RbacV1Interface
 	namespace      string
 
 	delPVCFoldersMu sync.Mutex
 }
 
-func NewPVCSubPathCleaner(pipelineRunApi v1beta1.PipelineRunInterface, subPathStorage *storage.PVCSubPathsStorage, clientset *kubernetes.Clientset, namespace string) *PVCSubPathCleaner {
+func NewPVCSubPathCleaner(
+	pipelineRunApi v1beta1.PipelineRunInterface,
+	subPathStorage *storage.PVCSubPathsStorage,
+	corev1 v1.CoreV1Interface,
+	rbacv1 typedrbacv1.RbacV1Interface,
+	namespace string) *PVCSubPathCleaner {
 	return &PVCSubPathCleaner{
 		pipelineRunApi: pipelineRunApi,
 		subPathStorage: subPathStorage,
-		clientset:      clientset,
+		corev1:         corev1,
+		rbacv1:         rbacv1,
 		namespace:      namespace,
 	}
 }
@@ -73,7 +81,7 @@ func (cleaner *PVCSubPathCleaner) ScheduleCleanUpSubPathFoldersContent() {
 		<-ticker.C
 		log.Printf("Schedule cleanup new subpath folders content for \"%s\" namespace", cleaner.namespace)
 
-		isNamespaceInDeletingState, err := pkg.IsNamespaceInDeletingState(cleaner.clientset, cleaner.namespace)
+		isNamespaceInDeletingState, err := pkg.IsNamespaceInDeletingState(cleaner.corev1, cleaner.namespace)
 		if err != nil {
 			log.Println(err)
 			continue
@@ -193,7 +201,7 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFolders() error {
 	podName := "clean-pvc-folders-pod"
 	podImage := os.Getenv("PVC_POD_CLEANER_IMAGE")
 	pvcSubPathCleanerPod := cleaner.getPodCleaner(podName, podName, command, volumes, volumeMounts, podImage)
-	_, err = cleaner.clientset.CoreV1().Pods(cleaner.namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
+	_, err = cleaner.corev1.Pods(cleaner.namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
 	if err != nil {
 		return err
 	}
@@ -250,7 +258,7 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFoldersContent() error {
 	log.Printf("Create new pvc sub-path folder content cleaner pod in namespace \"%s\"", cleaner.namespace)
 
 	pvcSubPathCleanerPod := cleaner.getPodCleaner("clean-pvc-sub-path-content-pod", "cleaner-pod", delFoldersContentCmd, volumes, volumeMounts, "registry.access.redhat.com/ubi8/ubi")
-	_, err = cleaner.clientset.CoreV1().Pods(cleaner.namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
+	_, err = cleaner.corev1.Pods(cleaner.namespace).Create(context.TODO(), pvcSubPathCleanerPod, metav1.CreateOptions{})
 	if err != nil {
 		return err
 	}
@@ -261,7 +269,7 @@ func (cleaner *PVCSubPathCleaner) cleanUpSubPathFoldersContent() error {
 }
 
 func (cleaner *PVCSubPathCleaner) waitAndDeleteCleanUpPod(podName string, label string, onDelete func([]*model.PVCSubPath), subPaths []*model.PVCSubPath) error {
-	watch, err := cleaner.clientset.CoreV1().Pods(cleaner.namespace).Watch(context.TODO(), metav1.ListOptions{
+	watch, err := cleaner.corev1.Pods(cleaner.namespace).Watch(context.TODO(), metav1.ListOptions{
 		LabelSelector: label,
 	})
 	if err != nil {
@@ -297,7 +305,7 @@ func (cleaner *PVCSubPathCleaner) waitAndDeleteCleanUpPod(podName string, label 
 	watch.Stop()
 
 	defer onDelete(subPaths)
-	return cleaner.clientset.CoreV1().Pods(cleaner.namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
+	return cleaner.corev1.Pods(cleaner.namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
 }
 
 func (cleaner *PVCSubPathCleaner) deletePVCFromStorage(pvcSubPaths []*model.PVCSubPath) {
@@ -370,12 +378,10 @@ func (cleaner *PVCSubPathCleaner) isActivePipelineRunPresent(pipelineRuns *pipel
 
 func (cleaner *PVCSubPathCleaner) ProvidePodCleanerPermissions() error {
 	// create service account if not exists
-	corev1api := cleaner.clientset.CoreV1()
-
-	_, err := corev1api.ServiceAccounts(cleaner.namespace).Get(context.TODO(), PVC_CLEANER_POD_SERVICE_ACCOUNT, metav1.GetOptions{})
+	_, err := cleaner.corev1.ServiceAccounts(cleaner.namespace).Get(context.TODO(), PVC_CLEANER_POD_SERVICE_ACCOUNT, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			if _, err = corev1api.ServiceAccounts(cleaner.namespace).Create(context.TODO(), cleaner.getServiceAccount(), metav1.CreateOptions{}); err != nil {
+			if _, err = cleaner.corev1.ServiceAccounts(cleaner.namespace).Create(context.TODO(), cleaner.getServiceAccount(), metav1.CreateOptions{}); err != nil {
 				return err
 			}
 		} else {
@@ -383,13 +389,11 @@ func (cleaner *PVCSubPathCleaner) ProvidePodCleanerPermissions() error {
 		}
 	}
 
-	rbacApi := cleaner.clientset.RbacV1()
-
 	// create rolebinding if not exists
-	_, err = rbacApi.RoleBindings(cleaner.namespace).Get(context.TODO(), PVC_CLEANER_POD_ROLEBINDING, metav1.GetOptions{})
+	_, err = cleaner.rbacv1.RoleBindings(cleaner.namespace).Get(context.TODO(), PVC_CLEANER_POD_ROLEBINDING, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			if _, err = rbacApi.RoleBindings(cleaner.namespace).Create(context.TODO(), cleaner.getRolebinding(), metav1.CreateOptions{}); err != nil {
+			if _, err = cleaner.rbacv1.RoleBindings(cleaner.namespace).Create(context.TODO(), cleaner.getRolebinding(), metav1.CreateOptions{}); err != nil {
 				return err
 			}
 		} else {
@@ -464,7 +468,7 @@ func (cleaner *PVCSubPathCleaner) getPodCleaner(name string, label string, delFo
 }
 
 func (cleaner *PVCSubPathCleaner) getPVCOrDie(pvcClaim string) error {
-	if _, err := cleaner.clientset.CoreV1().PersistentVolumeClaims(cleaner.namespace).Get(context.TODO(), pvcClaim, metav1.GetOptions{}); err != nil {
+	if _, err := cleaner.corev1.PersistentVolumeClaims(cleaner.namespace).Get(context.TODO(), pvcClaim, metav1.GetOptions{}); err != nil {
 		return err
 	}
 	return nil

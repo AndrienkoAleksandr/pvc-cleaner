@@ -24,7 +24,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
+	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/util/homedir"
 )
 
@@ -51,8 +51,8 @@ func IsOutSideClusterConfig() bool {
 	return strings.ToLower(isOutSideClusterConfig) == "true"
 }
 
-func IsNamespaceInDeletingState(clientset *kubernetes.Clientset, namespaceName string) (bool, error) {
-	namespace, err := clientset.CoreV1().Namespaces().Get(context.TODO(), namespaceName, metav1.GetOptions{})
+func IsNamespaceInDeletingState(corev1 v1.CoreV1Interface, namespaceName string) (bool, error) {
+	namespace, err := corev1.Namespaces().Get(context.TODO(), namespaceName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return true, nil
